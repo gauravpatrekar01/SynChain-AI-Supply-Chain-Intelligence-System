@@ -1,0 +1,884 @@
+﻿
+================================================================================
+  1. PRIMARY DATASET: DataCoSupplyChainDataset.csv
+================================================================================
+
+Loading DataCoSupplyChain dataset (96 MB)...
+Loaded successfully.
+
+
+--- 1.1 Dataset Shape ---
+
+  Rows:    180,519
+  Columns: 53
+  Memory:  298.9 MB
+
+--- 1.2 All Columns ---
+
+    1. Type
+    2. Days for shipping (real)
+    3. Days for shipment (scheduled)
+    4. Benefit per order
+    5. Sales per customer
+    6. Delivery Status
+    7. Late_delivery_risk
+    8. Category Id
+    9. Category Name
+   10. Customer City
+   11. Customer Country
+   12. Customer Email
+   13. Customer Fname
+   14. Customer Id
+   15. Customer Lname
+   16. Customer Password
+   17. Customer Segment
+   18. Customer State
+   19. Customer Street
+   20. Customer Zipcode
+   21. Department Id
+   22. Department Name
+   23. Latitude
+   24. Longitude
+   25. Market
+   26. Order City
+   27. Order Country
+   28. Order Customer Id
+   29. order date (DateOrders)
+   30. Order Id
+   31. Order Item Cardprod Id
+   32. Order Item Discount
+   33. Order Item Discount Rate
+   34. Order Item Id
+   35. Order Item Product Price
+   36. Order Item Profit Ratio
+   37. Order Item Quantity
+   38. Sales
+   39. Order Item Total
+   40. Order Profit Per Order
+   41. Order Region
+   42. Order State
+   43. Order Status
+   44. Order Zipcode
+   45. Product Card Id
+   46. Product Category Id
+   47. Product Description
+   48. Product Image
+   49. Product Name
+   50. Product Price
+   51. Product Status
+   52. shipping date (DateOrders)
+   53. Shipping Mode
+
+--- 1.3 Data Types ---
+
+  Data type distribution:
+    object         :  24 columns
+      - Type
+      - Delivery Status
+      - Category Name
+      - Customer City
+      - Customer Country
+      ... and 19 more
+    float64        :  15 columns
+      - Benefit per order
+      - Sales per customer
+      - Customer Zipcode
+      - Latitude
+      - Longitude
+      ... and 10 more
+    int64          :  14 columns
+      - Days for shipping (real)
+      - Days for shipment (scheduled)
+      - Late_delivery_risk
+      - Category Id
+      - Customer Id
+      ... and 9 more
+
+--- 1.4 Missing Values Analysis ---
+
+  Columns with missing values: 4
+  Total missing cells: 336,209
+
+             Column  Missing Count  Missing %
+Product Description         180519     100.00
+      Order Zipcode         155679      86.24
+     Customer Lname              8       0.00
+   Customer Zipcode              3       0.00
+
+--- 1.5 Duplicate Records ---
+
+  Exact duplicate rows: 0 (0.00%)
+  Duplicate (Order Id, Order Item Id) pairs: 0
+
+--- 1.6 Unique Values per Column ---
+
+  Type                                         :        4 unique values
+  Days for shipping (real)                     :        7 unique values
+  Days for shipment (scheduled)                :        4 unique values
+  Benefit per order                            :   21,998 unique values
+  Sales per customer                           :    2,927 unique values
+  Delivery Status                              :        4 unique values
+  Late_delivery_risk                           :        2 unique values
+  Category Id                                  :       51 unique values
+  Category Name                                :       50 unique values
+  Customer City                                :      563 unique values
+  Customer Country                             :        2 unique values
+  Customer Email                               :        1 unique values
+  Customer Fname                               :      782 unique values
+  Customer Id                                  :   20,652 unique values
+  Customer Lname                               :    1,109 unique values
+  Customer Password                            :        1 unique values
+  Customer Segment                             :        3 unique values
+  Customer State                               :       46 unique values
+  Customer Street                              :    7,458 unique values
+  Customer Zipcode                             :      995 unique values
+  Department Id                                :       11 unique values
+  Department Name                              :       11 unique values
+  Latitude                                     :   11,250 unique values
+  Longitude                                    :    4,487 unique values
+  Market                                       :        5 unique values
+  Order City                                   :    3,597 unique values
+  Order Country                                :      164 unique values
+  Order Customer Id                            :   20,652 unique values
+  order date (DateOrders)                      :   65,752 unique values
+  Order Id                                     :   65,752 unique values
+  Order Item Cardprod Id                       :      118 unique values
+  Order Item Discount                          :    1,017 unique values
+  Order Item Discount Rate                     :       18 unique values
+  Order Item Id                                :  180,519 unique values
+  Order Item Product Price                     :       75 unique values
+  Order Item Profit Ratio                      :      162 unique values
+  Order Item Quantity                          :        5 unique values
+  Sales                                        :      193 unique values
+  Order Item Total                             :    2,927 unique values
+  Order Profit Per Order                       :   21,998 unique values
+  Order Region                                 :       23 unique values
+  Order State                                  :    1,089 unique values
+  Order Status                                 :        9 unique values
+  Order Zipcode                                :      609 unique values
+  Product Card Id                              :      118 unique values
+  Product Category Id                          :       51 unique values
+  Product Description                          :        0 unique values
+  Product Image                                :      118 unique values
+  Product Name                                 :      118 unique values
+  Product Price                                :       75 unique values
+  Product Status                               :        1 unique values
+  shipping date (DateOrders)                   :   63,701 unique values
+  Shipping Mode                                :        4 unique values
+
+--- 1.7 Numerical Variable Statistics ---
+
+  Numerical columns: 29
+
+                                  count          mean           std          min           25%           50%            75%            max      skewness   kurtosis
+Days for shipping (real)       180519.0      3.497654      1.623722     0.000000      2.000000      3.000000       5.000000       6.000000  8.477127e-02  -1.007914
+Days for shipment (scheduled)  180519.0      2.931847      1.374449     0.000000      2.000000      4.000000       4.000000       4.000000 -7.319983e-01  -1.022949
+Benefit per order              180519.0     21.974989    104.433526 -4274.979980      7.000000     31.520000      64.800003     911.799988 -4.741834e+00  71.377259
+Sales per customer             180519.0    183.107609    120.043670     7.490000    104.379997    163.990005     247.399994    1939.989990  2.888446e+00  23.920362
+Late_delivery_risk             180519.0      0.548291      0.497664     0.000000      0.000000      1.000000       1.000000       1.000000 -1.940742e-01  -1.962357
+Category Id                    180519.0     31.851451     15.640064     2.000000     18.000000     29.000000      45.000000      76.000000  3.616248e-01  -0.603261
+Customer Id                    180519.0   6691.379495   4162.918106     1.000000   3258.500000   6457.000000    9779.000000   20757.000000  4.887683e-01   0.014899
+Customer Zipcode               180516.0  35921.126914  37542.461122   603.000000    725.000000  19380.000000   78207.000000   99205.000000  4.908834e-01  -1.451419
+Department Id                  180519.0      5.443460      1.629246     2.000000      4.000000      5.000000       7.000000      12.000000  2.733206e-01  -0.181697
+Latitude                       180519.0     29.719955      9.813646   -33.937553     18.265432     33.144863      39.279617      48.781933 -9.796267e-02  -1.555415
+Longitude                      180519.0    -84.915675     21.433241  -158.025986    -98.446312    -76.847908     -66.370583     115.263077 -4.984611e-01   2.180982
+Order Customer Id              180519.0   6691.379495   4162.918106     1.000000   3258.500000   6457.000000    9779.000000   20757.000000  4.887683e-01   0.014899
+Order Id                       180519.0  36221.894903  21045.379569     1.000000  18057.000000  36140.000000   54144.000000   77204.000000  3.270879e-02  -1.152936
+Order Item Cardprod Id         180519.0    692.509764    336.446807    19.000000    403.000000    627.000000    1004.000000    1363.000000  1.382546e-01  -1.267494
+Order Item Discount            180519.0     20.664741     21.800901     0.000000      5.400000     14.000000      29.990000     500.000000  3.039796e+00  25.231267
+Order Item Discount Rate       180519.0      0.101668      0.070415     0.000000      0.040000      0.100000       0.160000       0.250000  3.409276e-01  -0.901157
+Order Item Id                  180519.0  90260.000000  52111.490959     1.000000  45130.500000  90260.000000  135389.500000  180519.000000 -1.002129e-17  -1.200000
+Order Item Product Price       180519.0    141.232550    139.732492     9.990000     50.000000     59.990002     199.990005    1999.989990  3.191020e+00  23.312997
+Order Item Profit Ratio        180519.0      0.120647      0.466796    -2.750000      0.080000      0.270000       0.360000       0.500000 -2.893531e+00  10.157225
+Order Item Quantity            180519.0      2.127638      1.453451     1.000000      1.000000      1.000000       3.000000       5.000000  8.802518e-01  -0.753702
+Sales                          180519.0    203.772096    132.273077     9.990000    119.980003    199.919998     299.950012    1999.989990  2.884249e+00  23.936561
+Order Item Total               180519.0    183.107609    120.043670     7.490000    104.379997    163.990005     247.399994    1939.989990  2.888446e+00  23.920362
+Order Profit Per Order         180519.0     21.974989    104.433526 -4274.979980      7.000000     31.520000      64.800003     911.799988 -4.741834e+00  71.377259
+Order Zipcode                   24840.0  55426.132327  31919.279101  1040.000000  23464.000000  59405.000000   90008.000000   99301.000000 -1.403114e-01  -1.481735
+Product Card Id                180519.0    692.509764    336.446807    19.000000    403.000000    627.000000    1004.000000    1363.000000  1.382546e-01  -1.267494
+Product Category Id            180519.0     31.851451     15.640064     2.000000     18.000000     29.000000      45.000000      76.000000  3.616248e-01  -0.603261
+Product Description                 0.0           NaN           NaN          NaN           NaN           NaN            NaN            NaN           NaN        NaN
+Product Price                  180519.0    141.232550    139.732492     9.990000     50.000000     59.990002     199.990005    1999.989990  3.191020e+00  23.312997
+Product Status                 180519.0      0.000000      0.000000     0.000000      0.000000      0.000000       0.000000       0.000000  0.000000e+00   0.000000
+
+--- 1.8 Categorical Variable Analysis ---
+
+  Categorical columns: 24
+
+  >> Type
+     Unique values: 4
+     Top 5:
+       DEBIT                                              :   69,295 (38.4%)
+       TRANSFER                                           :   49,883 (27.6%)
+       PAYMENT                                            :   41,725 (23.1%)
+       CASH                                               :   19,616 (10.9%)
+
+  >> Delivery Status
+     Unique values: 4
+     Top 5:
+       Late delivery                                      :   98,977 (54.8%)
+       Advance shipping                                   :   41,592 (23.0%)
+       Shipping on time                                   :   32,196 (17.8%)
+       Shipping canceled                                  :    7,754 (4.3%)
+
+  >> Category Name
+     Unique values: 50
+     Top 5:
+       Cleats                                             :   24,551 (13.6%)
+       Men's Footwear                                     :   22,246 (12.3%)
+       Women's Apparel                                    :   21,035 (11.7%)
+       Indoor/Outdoor Games                               :   19,298 (10.7%)
+       Fishing                                            :   17,325 (9.6%)
+
+  >> Customer City
+     Unique values: 563
+     Top 5:
+       Caguas                                             :   66,770 (37.0%)
+       Chicago                                            :    3,885 (2.2%)
+       Los Angeles                                        :    3,417 (1.9%)
+       Brooklyn                                           :    3,412 (1.9%)
+       New York                                           :    1,816 (1.0%)
+
+  >> Customer Country
+     Unique values: 2
+     Top 5:
+       EE. UU.                                            :  111,146 (61.6%)
+       Puerto Rico                                        :   69,373 (38.4%)
+
+  >> Customer Email
+     Unique values: 1
+     Top 5:
+       XXXXXXXXX                                          :  180,519 (100.0%)
+
+  >> Customer Fname
+     Unique values: 782
+     Top 5:
+       Mary                                               :   65,150 (36.1%)
+       James                                              :    1,835 (1.0%)
+       Robert                                             :    1,759 (1.0%)
+       Michael                                            :    1,680 (0.9%)
+       David                                              :    1,625 (0.9%)
+
+  >> Customer Lname
+     Unique values: 1109
+     Top 5:
+       Smith                                              :   64,104 (35.5%)
+       Johnson                                            :      989 (0.5%)
+       Brown                                              :      909 (0.5%)
+       Williams                                           :      869 (0.5%)
+       Jones                                              :      859 (0.5%)
+
+  >> Customer Password
+     Unique values: 1
+     Top 5:
+       XXXXXXXXX                                          :  180,519 (100.0%)
+
+  >> Customer Segment
+     Unique values: 3
+     Top 5:
+       Consumer                                           :   93,504 (51.8%)
+       Corporate                                          :   54,789 (30.4%)
+       Home Office                                        :   32,226 (17.9%)
+
+  >> Customer State
+     Unique values: 46
+     Top 5:
+       PR                                                 :   69,373 (38.4%)
+       CA                                                 :   29,223 (16.2%)
+       NY                                                 :   11,327 (6.3%)
+       TX                                                 :    9,103 (5.0%)
+       IL                                                 :    7,631 (4.2%)
+
+  >> Customer Street
+     Unique values: 7458
+     Top 5:
+       9126 Wishing Expressway                            :      122 (0.1%)
+       4388 Burning Goose Ridge                           :      117 (0.1%)
+       4720 Noble Hills Wynd                              :      116 (0.1%)
+       2878 Hazy Wagon  Thicket                           :      113 (0.1%)
+       398 Emerald Grove                                  :      109 (0.1%)
+
+  >> Department Name
+     Unique values: 11
+     Top 5:
+       Fan Shop                                           :   66,861 (37.0%)
+       Apparel                                            :   48,998 (27.1%)
+       Golf                                               :   33,220 (18.4%)
+       Footwear                                           :   14,525 (8.0%)
+       Outdoors                                           :    9,686 (5.4%)
+
+  >> Market
+     Unique values: 5
+     Top 5:
+       LATAM                                              :   51,594 (28.6%)
+       Europe                                             :   50,252 (27.8%)
+       Pacific Asia                                       :   41,260 (22.9%)
+       USCA                                               :   25,799 (14.3%)
+       Africa                                             :   11,614 (6.4%)
+
+  >> Order City
+     Unique values: 3597
+     Top 5:
+       Santo Domingo                                      :    2,211 (1.2%)
+       New York City                                      :    2,202 (1.2%)
+       Los Angeles                                        :    1,845 (1.0%)
+       Tegucigalpa                                        :    1,783 (1.0%)
+       Managua                                            :    1,682 (0.9%)
+
+  >> Order Country
+     Unique values: 164
+     Top 5:
+       Estados Unidos                                     :   24,840 (13.8%)
+       Francia                                            :   13,222 (7.3%)
+       M├⌐xico                                             :   13,172 (7.3%)
+       Alemania                                           :    9,564 (5.3%)
+       Australia                                          :    8,497 (4.7%)
+
+  >> order date (DateOrders)
+     Unique values: 65752
+     Top 5:
+       1/4/2017 2:28                                      :        5 (0.0%)
+       4/1/2015 19:29                                     :        5 (0.0%)
+       11/23/2016 9:11                                    :        5 (0.0%)
+       6/17/2016 7:29                                     :        5 (0.0%)
+       7/8/2016 13:56                                     :        5 (0.0%)
+
+  >> Order Region
+     Unique values: 23
+     Top 5:
+       Central America                                    :   28,341 (15.7%)
+       Western Europe                                     :   27,109 (15.0%)
+       South America                                      :   14,935 (8.3%)
+       Oceania                                            :   10,148 (5.6%)
+       Northern Europe                                    :    9,792 (5.4%)
+
+  >> Order State
+     Unique values: 1089
+     Top 5:
+       Inglaterra                                         :    6,722 (3.7%)
+       California                                         :    4,966 (2.8%)
+       Isla de Francia                                    :    4,580 (2.5%)
+       Renania del Norte-Westfalia                        :    3,303 (1.8%)
+       San Salvador                                       :    3,055 (1.7%)
+
+  >> Order Status
+     Unique values: 9
+     Top 5:
+       COMPLETE                                           :   59,491 (33.0%)
+       PENDING_PAYMENT                                    :   39,832 (22.1%)
+       PROCESSING                                         :   21,902 (12.1%)
+       PENDING                                            :   20,227 (11.2%)
+       CLOSED                                             :   19,616 (10.9%)
+
+  >> Product Image
+     Unique values: 118
+     Top 5:
+       http://images.acmesports.sports/Perfect+Fitness+Pe :   24,515 (13.6%)
+       http://images.acmesports.sports/Nike+Men%27s+CJ+El :   22,246 (12.3%)
+       http://images.acmesports.sports/Nike+Men%27s+Dri-F :   21,035 (11.7%)
+       http://images.acmesports.sports/O%27Brien+Men%27s+ :   19,298 (10.7%)
+       http://images.acmesports.sports/Field+%26+Stream+S :   17,325 (9.6%)
+
+  >> Product Name
+     Unique values: 118
+     Top 5:
+       Perfect Fitness Perfect Rip Deck                   :   24,515 (13.6%)
+       Nike Men's CJ Elite 2 TD Football Cleat            :   22,246 (12.3%)
+       Nike Men's Dri-FIT Victory Golf Polo               :   21,035 (11.7%)
+       O'Brien Men's Neoprene Life Vest                   :   19,298 (10.7%)
+       Field & Stream Sportsman 16 Gun Fire Safe          :   17,325 (9.6%)
+
+  >> shipping date (DateOrders)
+     Unique values: 63701
+     Top 5:
+       4/17/2015 22:16                                    :       10 (0.0%)
+       3/16/2016 3:14                                     :       10 (0.0%)
+       3/16/2017 5:00                                     :       10 (0.0%)
+       11/6/2015 23:55                                    :       10 (0.0%)
+       7/5/2017 10:59                                     :       10 (0.0%)
+
+  >> Shipping Mode
+     Unique values: 4
+     Top 5:
+       Standard Class                                     :  107,752 (59.7%)
+       Second Class                                       :   35,216 (19.5%)
+       First Class                                        :   27,814 (15.4%)
+       Same Day                                           :    9,737 (5.4%)
+
+--- 1.9 Date Field Analysis ---
+
+  order date (DateOrders):
+    Valid dates: 180,519 / 180,519
+    Min date:    2015-01-01 00:00:00
+    Max date:    2018-01-31 23:38:00
+    Date range:  1126 days
+
+  shipping date (DateOrders):
+    Valid dates: 180,519 / 180,519
+    Min date:    2015-01-03 00:00:00
+    Max date:    2018-02-06 22:14:00
+    Date range:  1130 days
+
+
+--- 1.10 Outlier Analysis (IQR Method) ---
+
+                       Column     Q1     Q3    IQR  Lower Bound  Upper Bound  Outliers  Outlier %
+                        Sales 119.98 299.95 179.97      -149.98       569.91       488       0.27
+          Order Item Quantity   1.00   3.00   2.00        -2.00         6.00         0       0.00
+            Benefit per order   7.00  64.80  57.80       -79.70       151.50     18942      10.49
+          Order Item Discount   5.40  29.99  24.59       -31.48        66.87      7537       4.18
+      Order Item Profit Ratio   0.08   0.36   0.28        -0.34         0.78     17300       9.58
+     Days for shipping (real)   2.00   5.00   3.00        -2.50         9.50         0       0.00
+Days for shipment (scheduled)   2.00   4.00   2.00        -1.00         7.00         0       0.00
+     Order Item Product Price  50.00 199.99 149.99      -174.99       424.98      2048       1.13
+             Order Item Total 104.38 247.40 143.02      -110.15       461.93      1943       1.08
+
+--- 1.11 Correlation Analysis (Top Correlations) ---
+
+  Top 15 Correlations:
+               Feature 1                     Feature 2  Correlation
+        Order Item Total            Sales per customer       1.0000
+       Benefit per order        Order Profit Per Order       1.0000
+                   Sales              Order Item Total       0.9897
+                   Sales            Sales per customer       0.9897
+       Benefit per order       Order Item Profit Ratio       0.8237
+ Order Item Profit Ratio        Order Profit Per Order       0.8237
+                   Sales      Order Item Product Price       0.7899
+Order Item Product Price              Order Item Total       0.7818
+Order Item Product Price            Sales per customer       0.7818
+     Order Item Discount      Order Item Discount Rate       0.6600
+                   Sales           Order Item Discount       0.6174
+Days for shipping (real) Days for shipment (scheduled)       0.5159
+     Order Item Discount            Sales per customer       0.4987
+     Order Item Discount              Order Item Total       0.4987
+     Order Item Discount      Order Item Product Price       0.4881
+
+--- 1.12 Supply Chain Relationships ---
+
+  Delivery Status Distribution:
+    Late delivery                 :   98,977 (54.8%)
+    Advance shipping              :   41,592 (23.0%)
+    Shipping on time              :   32,196 (17.8%)
+    Shipping canceled             :    7,754 (4.3%)
+
+  Late Delivery Risk Distribution:
+    1:   98,977 (54.8%)
+    0:   81,542 (45.2%)
+
+  Shipping Mode Distribution:
+    Standard Class                :  107,752 (59.7%)
+    Second Class                  :   35,216 (19.5%)
+    First Class                   :   27,814 (15.4%)
+    Same Day                      :    9,737 (5.4%)
+
+  Order Status Distribution:
+    COMPLETE                      :   59,491 (33.0%)
+    PENDING_PAYMENT               :   39,832 (22.1%)
+    PROCESSING                    :   21,902 (12.1%)
+    PENDING                       :   20,227 (11.2%)
+    CLOSED                        :   19,616 (10.9%)
+    ON_HOLD                       :    9,804 (5.4%)
+    SUSPECTED_FRAUD               :    4,062 (2.3%)
+    CANCELED                      :    3,692 (2.0%)
+    PAYMENT_REVIEW                :    1,893 (1.0%)
+
+  Customer Segment Distribution:
+    Consumer                      :   93,504 (51.8%)
+    Corporate                     :   54,789 (30.4%)
+    Home Office                   :   32,226 (17.9%)
+
+--- 1.13 Potential Target Variables ---
+
+
+  EXISTING TARGET VARIABLES FOUND:
+  
+  1. Late_delivery_risk (Binary: 0/1)
+     - This is an EXISTING label in the dataset
+     - Indicates whether shipping is late (1) or not (0)
+     - Can serve as a baseline binary classification target
+  
+  2. Delivery Status (Categorical)
+     - Multi-class: Advance shipping, Late delivery, Shipping canceled, Shipping on time
+     - Could be used for multi-class risk classification
+  
+  POTENTIAL ENGINEERED TARGETS:
+  
+  3. Risk Score (0-100, Engineered)
+     - Can be constructed from: shipping delay, order profit, discount rate, etc.
+  
+  4. Risk Class (Low/Medium/High/Critical, Engineered)
+     - Derived from risk score thresholds
+
+  Cross-tabulation: Late_delivery_risk vs Delivery Status:
+Delivery Status     Advance shipping  Late delivery  Shipping canceled  Shipping on time     All
+Late_delivery_risk                                                                              
+0                              41592              0               7754             32196   81542
+1                                  0          98977                  0                 0   98977
+All                            41592          98977               7754             32196  180519
+
+--- 1.14 Potential Data Leakage Analysis ---
+
+
+  LEAKAGE RISK ASSESSMENT:
+  
+  HIGH RISK - Must NOT be used as features for Late_delivery_risk prediction:
+  
+  1. 'Delivery Status' - Directly encodes the delivery outcome
+     - 'Late delivery' is essentially the same as Late_delivery_risk=1
+     - MUST be excluded from feature set
+  
+  2. 'Days for shipping (real)' - Actual shipping days
+     - Known ONLY after shipment is complete
+     - Contains future information relative to prediction time
+     - The DIFFERENCE (real - scheduled) IS the delay
+     - MUST be excluded or used very carefully
+  
+  3. 'shipping date (DateOrders)' - Actual shipping date
+     - Known only after shipping occurs
+     - MUST be excluded from pre-shipment prediction
+  
+  MODERATE RISK:
+  
+  4. 'Order Status' - May contain post-event information
+     - Values like 'COMPLETE', 'CANCELED' are known only after the fact
+     - Consider using only pre-event statuses
+  
+  5. 'Sales per customer' - Aggregated metric
+     - If computed from ALL orders including current one, it leaks
+     - Must be computed from PRIOR orders only
+  
+  SAFE TO USE:
+  
+  6. Shipping Mode, Customer Segment, Product info, Order quantities,
+     scheduled shipping days, geographic features, prices, discounts
+
+
+--- 1.15 Feature Engineering Recommendations ---
+
+
+  RECOMMENDED FEATURES (from DataCoSupplyChain):
+  
+  A. ORDER FEATURES (Safe):
+     - Order Item Quantity
+     - Order Item Product Price  
+     - Order Item Discount / Discount Rate
+     - Sales
+     - Benefit per order / Order Profit Per Order
+     - Order Item Profit Ratio
+  
+  B. SHIPPING FEATURES (Safe):
+     - Days for shipment (scheduled) -- planned, not actual
+     - Shipping Mode (encoded)
+  
+  C. PRODUCT FEATURES (Safe):
+     - Category Name / Category Id
+     - Product Price
+     - Department Name
+  
+  D. CUSTOMER FEATURES (Safe):
+     - Customer Segment (encoded)
+     - Customer City / Country / Market / Region (geographic risk)
+  
+  E. TEMPORAL FEATURES (Can Engineer):
+     - Order month, day of week, quarter
+     - Season indicator
+     - Holiday proximity
+  
+  F. GEOGRAPHIC FEATURES (Can Engineer):
+     - Origin-Destination distance (from lat/long)
+     - Market risk indicator
+     - Region risk indicator
+  
+  FEATURES TO EXCLUDE:
+     - Late_delivery_risk (TARGET)
+     - Delivery Status (LEAKAGE)
+     - Days for shipping (real) (LEAKAGE)
+     - shipping date (DateOrders) (LEAKAGE - actual ship date)
+     - Customer Email, Password, Street (PII, irrelevant)
+     - Product Image (irrelevant)
+     - Product Description (text - needs NLP if used)
+
+
+================================================================================
+  2. SECONDARY DATASET: supply_chain_data.csv
+================================================================================
+
+  Shape: 100 rows x 24 columns
+  Memory: 0.06 MB
+  Duplicates: 0
+  Missing: 0 (0.00%)
+
+  Columns: ['Product type', 'SKU', 'Price', 'Availability', 'Number of products sold', 'Revenue generated', 'Customer demographics', 'Stock levels', 'Lead times', 'Order quantities', 'Shipping times', 'Shipping carriers', 'Shipping costs', 'Supplier name', 'Location', 'Lead time', 'Production volumes', 'Manufacturing lead time', 'Manufacturing costs', 'Inspection results', 'Defect rates', 'Transportation modes', 'Routes', 'Costs']
+
+  Numerical stats:
+                         count         mean          std          min          25%          50%          75%          max
+Price                    100.0    49.462461    31.168193     1.699976    19.597823    51.239831    77.198228    99.171329
+Availability             100.0    48.400000    30.743317     1.000000    22.750000    43.500000    75.000000   100.000000
+Number of products sold  100.0   460.990000   303.780074     8.000000   184.250000   392.500000   704.250000   996.000000
+Revenue generated        100.0  5776.048187  2732.841744  1061.618523  2812.847151  6006.352023  8253.976921  9866.465458
+Stock levels             100.0    47.770000    31.369372     0.000000    16.750000    47.500000    73.000000   100.000000
+Lead times               100.0    15.960000     8.785801     1.000000     8.000000    17.000000    24.000000    30.000000
+Order quantities         100.0    49.220000    26.784429     1.000000    26.000000    52.000000    71.250000    96.000000
+Shipping times           100.0     5.750000     2.724283     1.000000     3.750000     6.000000     8.000000    10.000000
+Shipping costs           100.0     5.548149     2.651376     1.013487     3.540248     5.320534     7.601695     9.929816
+Lead time                100.0    17.080000     8.846251     1.000000    10.000000    18.000000    25.000000    30.000000
+Production volumes       100.0   567.840000   263.046861   104.000000   352.000000   568.500000   797.000000   985.000000
+Manufacturing lead time  100.0    14.770000     8.912430     1.000000     7.000000    14.000000    23.000000    30.000000
+Manufacturing costs      100.0    47.266693    28.982841     1.085069    22.983299    45.905622    68.621026    99.466109
+Defect rates             100.0     2.277158     1.461366     0.018608     1.009650     2.141863     3.563995     4.939255
+Costs                    100.0   529.245782   258.301696   103.916248   318.778455   520.430444   763.078231   997.413450
+
+  Categorical distributions:
+
+  >> Product type: 3 unique
+     Top 3: {'skincare': np.int64(40), 'haircare': np.int64(34), 'cosmetics': np.int64(26)}
+
+  >> SKU: 100 unique
+     Top 3: {'SKU0': np.int64(1), 'SKU1': np.int64(1), 'SKU2': np.int64(1)}
+
+  >> Customer demographics: 4 unique
+     Top 3: {'Unknown': np.int64(31), 'Female': np.int64(25), 'Non-binary': np.int64(23)}
+
+  >> Shipping carriers: 3 unique
+     Top 3: {'Carrier B': np.int64(43), 'Carrier C': np.int64(29), 'Carrier A': np.int64(28)}
+
+  >> Supplier name: 5 unique
+     Top 3: {'Supplier 1': np.int64(27), 'Supplier 2': np.int64(22), 'Supplier 5': np.int64(18)}
+
+  >> Location: 5 unique
+     Top 3: {'Kolkata': np.int64(25), 'Mumbai': np.int64(22), 'Chennai': np.int64(20)}
+
+  >> Inspection results: 3 unique
+     Top 3: {'Pending': np.int64(41), 'Fail': np.int64(36), 'Pass': np.int64(23)}
+
+  >> Transportation modes: 4 unique
+     Top 3: {'Road': np.int64(29), 'Rail': np.int64(28), 'Air': np.int64(26)}
+
+  >> Routes: 3 unique
+     Top 3: {'Route A': np.int64(43), 'Route B': np.int64(37), 'Route C': np.int64(20)}
+
+================================================================================
+  3. SECONDARY DATASET: Grocery_Inventory new v1.csv
+================================================================================
+
+  Shape: 990 rows x 17 columns
+  Duplicates: 0
+  Missing: 1 (0.01%)
+
+  Columns: ['Product_Name', 'Catagory', 'Supplier_Name', 'Warehouse_Location', 'Status', 'Product_ID', 'Supplier_ID', 'Date_Received', 'Last_Order_Date', 'Expiration_Date', 'Stock_Quantity', 'Reorder_Level', 'Reorder_Quantity', 'Unit_Price', 'Sales_Volume', 'Inventory_Turnover_Rate', 'percentage']
+
+  Numerical stats:
+                         count       mean        std   min    25%   50%    75%    max
+Stock_Quantity           990.0  55.609091  26.300775  10.0  33.00  56.0  79.00  100.0
+Reorder_Level            990.0  51.215152  29.095241   1.0  25.25  53.0  77.00  100.0
+Reorder_Quantity         990.0  51.913131  29.521059   1.0  25.00  54.0  77.00  100.0
+Sales_Volume             990.0  58.925253  23.002318  20.0  39.00  58.0  78.00  100.0
+Inventory_Turnover_Rate  990.0  50.150505  28.798954   1.0  25.00  50.0  74.75  100.0
+
+  Key supply-chain columns:
+
+  >> Status: 3 unique values
+     Distribution: {'Discontinued': np.int64(333), 'Active': np.int64(332), 'Backordered': np.int64(325)}
+
+  >> Supplier_Name: 350 unique values
+     Distribution: {'Katz': np.int64(12), 'Meevee': np.int64(10), 'Quatz': np.int64(9), 'Twitterwire': np.int64(7), 'Vinder': np.int64(7)}
+
+  >> Warehouse_Location: 990 unique values
+     Distribution: {'20 Pennsylvania Parkway': np.int64(1), '03643 Oakridge Lane': np.int64(1), '73 Graedel Street': np.int64(1), '44801 Myrtle Center': np.int64(1), '6195 Monterey Center': np.int64(1)}
+
+  >> Catagory: 7 unique values
+     Distribution: {'Fruits & Vegetables': np.int64(331), 'Dairy': np.int64(180), 'Grains & Pulses': np.int64(162), 'Seafood': np.int64(90), 'Oils & Fats': np.int64(77)}
+
+================================================================================
+  4. SECONDARY DATASET: retail_store_inventory.csv
+================================================================================
+
+  Shape: 73,100 rows x 15 columns
+  Duplicates: 0
+  Missing: 0 (0.00%)
+
+  Columns: ['Date', 'Store ID', 'Product ID', 'Category', 'Region', 'Inventory Level', 'Units Sold', 'Units Ordered', 'Demand Forecast', 'Price', 'Discount', 'Weather Condition', 'Holiday/Promotion', 'Competitor Pricing', 'Seasonality']
+
+  Numerical stats:
+                      count        mean         std    min     25%      50%       75%     max
+Inventory Level     73100.0  274.469877  129.949514  50.00  162.00  273.000  387.0000  500.00
+Units Sold          73100.0  136.464870  108.919406   0.00   49.00  107.000  203.0000  499.00
+Units Ordered       73100.0  110.004473   52.277448  20.00   65.00  110.000  155.0000  200.00
+Demand Forecast     73100.0  141.494720  109.254076  -9.99   53.67  113.015  208.0525  518.55
+Price               73100.0   55.135108   26.021945  10.00   32.65   55.050   77.8600  100.00
+Discount            73100.0   10.009508    7.083746   0.00    5.00   10.000   15.0000   20.00
+Holiday/Promotion   73100.0    0.497305    0.499996   0.00    0.00    0.000    1.0000    1.00
+Competitor Pricing  73100.0   55.146077   26.191408   5.03   32.68   55.010   77.8200  104.94
+
+  Key columns:
+
+  >> Category: 5 unique values
+     Distribution: {'Furniture': np.int64(14699), 'Toys': np.int64(14643), 'Clothing': np.int64(14626), 'Groceries': np.int64(14611), 'Electronics': np.int64(14521)}
+
+  >> Region: 4 unique values
+     Distribution: {'East': np.int64(18349), 'South': np.int64(18297), 'North': np.int64(18228), 'West': np.int64(18226)}
+
+  >> Weather Condition: 4 unique values
+     Distribution: {'Sunny': np.int64(18290), 'Rainy': np.int64(18278), 'Snowy': np.int64(18272), 'Cloudy': np.int64(18260)}
+
+  >> Holiday/Promotion: 2 unique values
+     Distribution: {0: np.int64(36747), 1: np.int64(36353)}
+
+  >> Seasonality: 4 unique values
+     Distribution: {'Spring': np.int64(18317), 'Summer': np.int64(18305), 'Winter': np.int64(18285), 'Autumn': np.int64(18193)}
+
+================================================================================
+  5. LOGISTICS CLUSTER: loads + trips + delivery_events
+================================================================================
+
+  loads.csv:             85,410 rows x 12 cols
+  trips.csv:             85,410 rows x 12 cols
+  delivery_events.csv: sampled 100,000 rows (full file ~22MB)
+
+--- 5.1 Loads Analysis ---
+
+  Columns: ['load_id', 'customer_id', 'route_id', 'load_date', 'load_type', 'weight_lbs', 'pieces', 'revenue', 'fuel_surcharge', 'accessorial_charges', 'load_status', 'booking_type']
+
+  Load Status Distribution:
+    Completed           : 85,410
+
+  Load Type Distribution:
+    Refrigerated        : 42,946
+    Dry Van             : 42,464
+
+--- 5.2 Trips Analysis ---
+
+  Columns: ['trip_id', 'load_id', 'driver_id', 'truck_id', 'trailer_id', 'dispatch_date', 'actual_distance_miles', 'actual_duration_hours', 'fuel_gallons_used', 'average_mpg', 'idle_time_hours', 'trip_status']
+
+  Trip Status Distribution:
+    Completed           : 85,410
+
+  Trip stats:
+                         count         mean         std   min    25%     50%     75%     max
+actual_distance_miles  85410.0  1430.268130  801.931973  90.0  717.0  1297.5  2147.0  3391.0
+actual_duration_hours  85410.0    25.014674   14.191944   1.4   12.6    23.0    36.9    67.8
+fuel_gallons_used      85410.0   221.827422  126.558874  12.0  111.8   204.5   326.4   611.9
+average_mpg            85410.0     6.501463    0.578091   5.5    6.0     6.5     7.0     7.5
+idle_time_hours        85410.0     7.010783    2.882488   2.0    4.5     7.0     9.5    12.0
+
+--- 5.3 Delivery Events (Sample) ---
+
+  Columns: ['event_id', 'load_id', 'trip_id', 'event_type', 'facility_id', 'scheduled_datetime', 'actual_datetime', 'detention_minutes', 'on_time_flag', 'location_city', 'location_state']
+
+  Event Type Distribution:
+    Pickup              : 50,000
+    Delivery            : 50,000
+
+  On-Time Flag Distribution:
+    True: 55,668 (55.7%)
+    False: 44,332 (44.3%)
+
+================================================================================
+  6. GENERATING VISUALIZATIONS
+================================================================================
+
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\delivery_status_distribution.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\numerical_distributions.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\correlation_heatmap.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\shipping_mode_vs_risk.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\segment_vs_risk.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\market_distribution.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\order_status_distribution.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\category_sales.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\boxplots.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\shipping_delay_analysis.png
+  [SAVED] d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda\retail_inventory_analysis.png
+
+================================================================================
+  7. DATASET SELECTION & INTEGRATION STRATEGY
+================================================================================
+
+
+  DATASET SELECTION FOR SYNCHAIN:
+  
+  PRIMARY DATASET (Core ML Pipeline):
+  ====================================
+  DataCoSupplyChainDataset.csv
+    - Rows: ~180,000+
+    - Has existing risk label: Late_delivery_risk
+    - Has delivery status: Advance/Late/Canceled/On-time  
+    - Rich features: orders, products, customers, shipping, geography
+    - Date fields for temporal analysis
+    - Suitable for: Risk Prediction, SHAP, Recommendations, Simulation
+  
+  SUPPLEMENTARY DATASETS:
+  ====================================
+  
+  1. retail_store_inventory.csv (for Inventory Intelligence)
+     - Has: Inventory Level, Units Sold, Demand Forecast, Weather
+     - Use for: Demand forecasting, inventory risk, weather analysis
+  
+  2. supply_chain_data.csv (for Supplier Intelligence)
+     - Has: Supplier name, Lead times, Defect rates, Costs
+     - Use for: Supplier scoring, manufacturing risk
+  
+  3. Grocery_Inventory new v1.csv (for Inventory Features)
+     - Has: Stock quantities, Reorder levels, Turnover rates
+     - Use for: Inventory intelligence, reorder recommendations
+  
+  4. Logistics Cluster (loads + trips + delivery_events)
+     - Has: Trip performance, delivery on-time status, fuel data
+     - Use for: Transportation risk, route optimization
+  
+  NOT SUITABLE FOR CORE ML:
+  ====================================
+  - car_purchasing.csv - Not supply chain related
+  - sales data file.csv - Advertising spend, not supply chain
+  - Chocolate Sales.csv - Too small, limited features
+  - tokenized_access_logs.csv - Web access logs, not supply chain
+  - BigBasket Products.csv - Product catalog only
+  - Amazon Sale Report.csv - Sales only, limited risk features
+  - ML-Dataset.csv - Generic order data, limited features
+
+
+================================================================================
+  8. PHASE 1 CONCLUSION & NEXT STEPS
+================================================================================
+
+
+  PHASE 1 FINDINGS SUMMARY:
+  ==========================
+  
+  1. DATA AVAILABILITY: 34 files covering orders, deliveries, suppliers,
+     inventory, logistics, and retail operations.
+  
+  2. PRIMARY TARGET: Late_delivery_risk (binary 0/1) exists in DataCo dataset.
+     We will ALSO engineer a multi-class risk score (Low/Medium/High/Critical).
+  
+  3. DATA QUALITY:
+     - DataCo: Several columns with missing values (needs Phase 2 cleaning)
+     - Some columns have PII that must be removed
+     - Outliers present in Sales, Quantity, and financial columns
+  
+  4. LEAKAGE RISKS IDENTIFIED:
+     - 'Delivery Status' MUST NOT be used as a feature
+     - 'Days for shipping (real)' is post-event knowledge
+     - 'Order Status' contains post-event information
+  
+  5. FEATURE POTENTIAL: Rich feature space with order, product, customer,
+     geographic, and temporal dimensions.
+  
+  6. INTEGRATION OPPORTUNITY: Multiple datasets can be combined for a
+     comprehensive supply-chain intelligence system.
+  
+  NEXT STEP: PHASE 2 - Data Cleaning
+  ===================================
+  - Handle missing values
+  - Remove duplicates
+  - Fix data types
+  - Remove PII columns
+  - Handle outliers
+  - Prepare clean dataset for feature engineering
+  
+  STATUS: PHASE 1 COMPLETE - AWAITING REVIEW
+
+
+All visualizations saved to: d:\SynChain-AI-Supply-Chain-Intelligence-System\outputs\phase1_eda
+Total visualizations generated: 11
+
+[PHASE 1 COMPLETE]
