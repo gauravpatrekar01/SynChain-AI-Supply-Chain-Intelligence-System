@@ -41,7 +41,7 @@ FAC00039,Charlotte Distribution Center,Warehouse,Charlotte,NC,35.2271,-80.8431,4
 FAC00040,Nashville Distribution Center,Cross-Dock,Nashville,TN,36.1627,-86.7816,55,24/7
 FAC00041,Milwaukee Distribution Center,Cross-Dock,Milwaukee,WI,43.0389,-87.9065,23,24/7
 FAC00042,Salt Lake City Terminal,Warehouse,Salt Lake City,UT,40.7608,-111.891,117,7AM-7PM
-FAC00043,Atlanta Warehouse,Warehouse,Atlanta,GA,33.749,-84.388,88,7AM-7PM
+FAC00043,Atlanta Warehouse,Warehouse,Atlanta                           ,GA,33.749,-84.388,88,7AM-7PM
 FAC00044,Las Vegas Terminal,Cross-Dock,Las Vegas,NV,36.1699,-115.1398,89,7AM-7PM
 FAC00045,Houston Hub,Distribution Center,Houston,TX,29.7604,-95.3698,124,8AM-5PM
 FAC00046,Los Angeles Distribution Center,Cross-Dock,Los Angeles,CA,34.0522,-118.2437,83,24/7
