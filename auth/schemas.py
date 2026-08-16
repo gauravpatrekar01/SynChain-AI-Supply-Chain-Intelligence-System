@@ -1,18 +1,17 @@
 from pydantic import BaseModel, EmailStr
 
-# Schema for new user
 
-
-class userCreate(BaseModel):
-    id: int
+class UserCreate(BaseModel):
     username: str
-    email: str
+    email: EmailStr
     password: str
-    role: str
-
-# Schema for user login
 
 
-class userLogin(BaseModel):
-    username: str
-    password: str
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
