@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from app.api.v1.test_email import router as test_email_router
 from typing import Dict, Any, List
 from pydantic import BaseModel
 import uuid
@@ -12,6 +13,7 @@ from app.services.copilot.ai_service import AICopilotService
 from app.api.v1.auth import router as auth_router
 
 router = APIRouter()
+router.include_router(test_email_router, prefix="/test", tags=["test"])
 router.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 # Initialize services
