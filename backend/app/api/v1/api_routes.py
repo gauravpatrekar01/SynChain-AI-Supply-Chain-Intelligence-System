@@ -9,8 +9,10 @@ from app.services.risk_prediction.xgb_predictor import RiskPredictionService
 from app.services.graph.neo4j_service import Neo4jGraphService
 from app.services.simulation.simulator import SimulationService
 from app.services.copilot.ai_service import AICopilotService
+from app.api.v1.auth import router as auth_router
 
 router = APIRouter()
+router.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 # Initialize services
 forecast_service = ForecastingService()

@@ -1,6 +1,8 @@
 # Logs
 datasets/SalesFINAL12312016.csv
 datasets/PurchasesFINAL12312016.csv
+
+.env
 logs
 *.log
 npm-debug.log*
