@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.api.v1.api_routes import router as api_v1_router
 
 app = FastAPI(
     title="SynChain AI API Core",
@@ -16,6 +17,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(api_v1_router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():
