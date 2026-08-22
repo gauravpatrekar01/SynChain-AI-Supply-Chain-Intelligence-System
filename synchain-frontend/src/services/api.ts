@@ -48,17 +48,36 @@ apiClient.interceptors.request.use((config) => {
 
 export const apiService = {
   // Authentication
-  async login(email: string, _password?: string): Promise<{ token: string; user: UserProfile }> {
-    try {
-      const res = await apiClient.post('/login', { email, password: _password });
-      return res.data;
-    } catch {
-      // High fidelity mock fallback
-      const user = mockUserProfiles.find((u) => u.email.toLowerCase() === email.toLowerCase()) || mockUserProfiles[0];
-      const mockToken = `synchain_mock_jwt_${btoa(user.email)}_${Date.now()}`;
-      localStorage.setItem('synchain_auth_token', mockToken);
-      return { token: mockToken, user };
-    }
+  async register(data: any): Promise<UserProfile> {
+    const res = await apiClient.post('/register', data);
+    return res.data;
+  },
+
+  async login(email: string, _password?: string): Promise<{ access_token: string; token_type: string }> {
+    // FastAPI OAuth2 expects form data for login, but our backend might expect JSON based on UserLogin schema.
+    // Looking at backend/app/schemas/auth.py, UserLogin is a BaseModel, so JSON is expected.
+    const res = await apiClient.post('/login', { email, password: _password });
+    return res.data;
+  },
+
+  async getMe(): Promise<UserProfile> {
+    const res = await apiClient.get('/me');
+    return res.data;
+  },
+
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    const res = await apiClient.post('/verify-email', { token });
+    return res.data;
+  },
+
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const res = await apiClient.post('/forgot-password', { email });
+    return res.data;
+  },
+
+  async resetPassword(token: string, new_password: string): Promise<{ message: string }> {
+    const res = await apiClient.post('/reset-password', { token, new_password });
+    return res.data;
   },
 
   // Dashboard Telemetry & Metrics

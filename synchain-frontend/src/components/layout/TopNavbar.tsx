@@ -10,6 +10,7 @@ import {
   Activity,
   Cpu,
   UserCheck,
+  LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -23,7 +24,7 @@ interface TopNavbarProps {
 }
 
 export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
-  const { user, switchPersona, availableUsers } = useAuth();
+  const { user, logout } = useAuth();
   const { theme, setTheme, settings, updateSettings } = useTheme();
   const {
     health,
@@ -191,13 +192,13 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
             className="flex items-center gap-2.5 p-1.5 pr-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/40 transition-all cursor-pointer"
           >
             <img
-              src={user.avatarUrl}
-              alt={user.name}
+              src={user?.avatarUrl || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64'}
+              alt={user?.name || 'User'}
               className="w-7 h-7 rounded-lg object-cover ring-1 ring-blue-400/50"
             />
             <div className="hidden lg:block text-left">
-              <p className="text-xs font-semibold text-slate-100 leading-tight">{user.name}</p>
-              <p className="text-[10px] text-blue-400 leading-tight">{user.role}</p>
+              <p className="text-xs font-semibold text-slate-100 leading-tight">{user?.name}</p>
+              <p className="text-[10px] text-blue-400 leading-tight">{user?.role}</p>
             </div>
             <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
@@ -205,44 +206,14 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
           {isProfileOpen && (
             <div className="absolute right-0 mt-2 w-64 rounded-2xl glass-dropdown border border-blue-500/30 p-2 shadow-2xl z-50">
               <div className="px-3 py-2 border-b border-white/10 mb-1">
-                <p className="text-xs font-semibold text-white">{user.name}</p>
-                <p className="text-[11px] text-slate-400">{user.email}</p>
+                <p className="text-xs font-semibold text-white">{user?.name}</p>
+                <p className="text-[11px] text-slate-400">{user?.email}</p>
                 <div className="mt-1 flex items-center gap-1.5">
                   <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-medium border border-blue-400/30">
-                    {user.accessTier}
+                    {user?.accessTier}
                   </span>
                 </div>
               </div>
-
-              <div className="px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
-                Switch Demo Persona
-              </div>
-
-              {availableUsers.map((persona) => (
-                <button
-                  key={persona.id}
-                  onClick={() => {
-                    switchPersona(persona.id);
-                    setIsProfileOpen(false);
-                  }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all cursor-pointer ${
-                    user.id === persona.id
-                      ? 'bg-blue-600/20 border border-blue-500/30'
-                      : 'hover:bg-white/5'
-                  }`}
-                >
-                  <img
-                    src={persona.avatarUrl}
-                    alt={persona.name}
-                    className="w-6 h-6 rounded-md object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-slate-100 truncate">{persona.name}</p>
-                    <p className="text-[10px] text-slate-400 truncate">{persona.role}</p>
-                  </div>
-                  {user.id === persona.id && <UserCheck className="w-4 h-4 text-blue-400" />}
-                </button>
-              ))}
 
               <div className="border-t border-white/10 mt-2 pt-2">
                 <button
@@ -251,10 +222,20 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
                     setIsProfileOpen(false);
                     onNavigate('settings');
                   }}
-                  className="w-full px-3 py-2 rounded-xl text-xs text-slate-300 hover:text-white hover:bg-white/5 text-left transition-all cursor-pointer flex items-center gap-2"
+                  className="w-full px-3 py-2 rounded-xl text-xs text-slate-300 hover:text-white hover:bg-white/5 text-left transition-all cursor-pointer flex items-center gap-2 mb-1"
                 >
                   <Cpu className="w-3.5 h-3.5 text-slate-400" />
                   System Settings & API Gateway
+                </button>
+                <button
+                  onClick={() => {
+                    logout();
+                    setIsProfileOpen(false);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl text-xs text-rose-400 hover:text-white hover:bg-rose-500/20 text-left transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                  Log Out
                 </button>
               </div>
             </div>

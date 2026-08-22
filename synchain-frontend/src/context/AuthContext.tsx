@@ -1,51 +1,80 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { mockUserProfiles } from '../services/mockData';
 import { soundFX } from '../services/audioService';
+import { apiService } from '../services/api';
 
 interface AuthContextType {
-  user: UserProfile;
+  user: UserProfile | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
   login: (email: string, password?: string) => Promise<void>;
   logout: () => void;
-  switchPersona: (userId: string) => void;
-  availableUsers: UserProfile[];
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile>(() => {
-    const saved = localStorage.getItem('synchain_active_user');
-    return saved ? JSON.parse(saved) : mockUserProfiles[0];
-  });
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return !!localStorage.getItem('synchain_auth_token') || true; // Default logged in for seamless demo
-  });
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const login = async (email: string, _password?: string) => {
+  // Initialize Auth
+  useEffect(() => {
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('synchain_auth_token');
+      if (token) {
+        try {
+          // Verify token and fetch user
+          const userData = await apiService.getMe();
+          // Map backend snake_case to frontend camelCase if needed, 
+          // or assume api returns camelCase/we handle it here.
+          const data: any = userData;
+          setUser({
+            ...userData,
+            avatarUrl: data.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64',
+            accessTier: data.access_tier || 'Standard Executive',
+          } as unknown as UserProfile);
+          setIsAuthenticated(true);
+        } catch (error) {
+          console.error("Failed to verify token on load", error);
+          localStorage.removeItem('synchain_auth_token');
+          setIsAuthenticated(false);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    initializeAuth();
+  }, []);
+
+  const login = async (email: string, password?: string) => {
     soundFX.playClick();
-    const found = mockUserProfiles.find((u) => u.email.toLowerCase() === email.toLowerCase()) || mockUserProfiles[0];
-    setUser(found);
-    setIsAuthenticated(true);
-    localStorage.setItem('synchain_active_user', JSON.stringify(found));
-    localStorage.setItem('synchain_auth_token', `synchain_mock_jwt_${btoa(found.email)}`);
-    soundFX.playSuccessFanfare();
+    try {
+      const res = await apiService.login(email, password);
+      localStorage.setItem('synchain_auth_token', res.access_token);
+      
+      const userData = await apiService.getMe();
+      const data: any = userData;
+      setUser({
+        ...userData,
+        avatarUrl: data.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64',
+        accessTier: data.access_tier || 'Standard Executive',
+      } as unknown as UserProfile);
+      
+      setIsAuthenticated(true);
+      soundFX.playSuccessFanfare();
+    } catch (error) {
+      console.error("Login failed", error);
+      throw error; // Rethrow to let the UI handle the error
+    }
   };
 
   const logout = () => {
     soundFX.playClick();
     setIsAuthenticated(false);
+    setUser(null);
     localStorage.removeItem('synchain_auth_token');
-  };
-
-  const switchPersona = (userId: string) => {
-    const target = mockUserProfiles.find((u) => u.id === userId);
-    if (target) {
-      setUser(target);
-      localStorage.setItem('synchain_active_user', JSON.stringify(target));
-      soundFX.playAlertChime();
-    }
+    window.location.href = '/login';
   };
 
   return (
@@ -53,10 +82,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         user,
         isAuthenticated,
+        isLoading,
         login,
         logout,
-        switchPersona,
-        availableUsers: mockUserProfiles,
       }}
     >
       {children}

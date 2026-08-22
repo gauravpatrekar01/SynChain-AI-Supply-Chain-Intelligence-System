@@ -26,6 +26,9 @@ class UserResponse(UserBase):
     is_verified: bool
     is_active: bool
     role: str
+    avatar_url: Optional[str] = None
+    department: Optional[str] = None
+    access_tier: Optional[str] = None
     created_at: datetime
     last_login: Optional[datetime] = None
 
