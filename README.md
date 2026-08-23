@@ -4,8 +4,6 @@
   <strong>AI-Powered Supply Chain Risk Intelligence, Digital Twin & Decision Support Platform</strong>
 </p>
 
-<img width="1919" height="907" alt="Screenshot 2026-08-23 232037" src="https://github.com/user-attachments/assets/195a99d4-3d99-4211-91f7-6fc2f9ee0c21" />
-
 <p align="center">
   Predict • Simulate • Understand • Mitigate
 </p>
