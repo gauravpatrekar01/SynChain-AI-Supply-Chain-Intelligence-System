@@ -746,8 +746,8 @@ If credentials are accidentally exposed, they should be **revoked and regenerate
 | Member | Role |
 |---|---|
 | **Gaurav Patrekar** | Developer |
-| **Karan** | Developer |
-| **Shridhar** | Developer |
+| **Karan Chavan** | Developer |
+| **Shridhar Gurav** | Developer |
 
 ---
 
