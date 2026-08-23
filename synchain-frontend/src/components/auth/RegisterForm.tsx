@@ -55,7 +55,8 @@ export const RegisterForm: React.FC = () => {
 
           {success && (
             <div className="mb-6 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-medium">
-              Account registered successfully! A verification email has been sent. Redirecting...
+              <p>Account created successfully. Welcome to SynChain AI!</p>
+              <p className="mt-2">Please verify your email before accessing protected features.</p>
             </div>
           )}
 

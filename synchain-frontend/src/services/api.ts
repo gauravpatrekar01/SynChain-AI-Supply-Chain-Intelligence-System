@@ -11,6 +11,8 @@ import {
   RiskItem,
   ReportSummaryItem,
   UserProfile,
+  EnterpriseIntegration,
+  IntegrationSystemType,
 } from '../types';
 import {
   mockAIHealth,
@@ -78,6 +80,25 @@ export const apiService = {
   async resetPassword(token: string, new_password: string): Promise<{ message: string }> {
     const res = await apiClient.post('/auth/reset-password', { token, new_password });
     return res.data;
+  },
+
+  async testIntegration(data: { name: string; system_type: IntegrationSystemType; base_url: string; api_key: string; api_secret?: string; api_version?: string }): Promise<{ success: boolean; message: string }> {
+    const res = await apiClient.post('/integrations/test', data);
+    return res.data;
+  },
+
+  async createIntegration(data: { name: string; system_type: IntegrationSystemType; base_url: string; api_key: string; api_secret?: string; api_version?: string }): Promise<EnterpriseIntegration> {
+    const res = await apiClient.post('/integrations', data);
+    return res.data;
+  },
+
+  async getIntegrations(): Promise<EnterpriseIntegration[]> {
+    const res = await apiClient.get('/integrations');
+    return res.data;
+  },
+
+  async skipOnboarding(): Promise<void> {
+    await apiClient.post('/integrations/skip');
   },
 
   // Dashboard Telemetry & Metrics

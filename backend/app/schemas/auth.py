@@ -31,6 +31,7 @@ class UserResponse(UserBase):
     access_tier: Optional[str] = None
     created_at: datetime
     last_login: Optional[datetime] = None
+    onboarding_completed: bool = False
 
     class Config:
         from_attributes = True

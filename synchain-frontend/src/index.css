@@ -59,6 +59,22 @@
   .font-display {
     font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
   }
+
+  .field {
+    display: block;
+    width: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.75rem;
+    background: rgba(0, 0, 0, 0.4);
+    color: #e2e8f0;
+    padding: 0.7rem 0.8rem;
+    outline: none;
+  }
+
+  .field:focus {
+    border-color: rgba(34, 211, 238, 0.55);
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.15);
+  }
 }
 
 /* Glassmorphism Styles */

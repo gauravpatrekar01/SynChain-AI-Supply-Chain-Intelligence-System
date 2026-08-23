@@ -389,6 +389,21 @@ export interface UserProfile {
   avatarUrl: string;
   department: string;
   accessTier: 'Enterprise Admin' | 'Standard Executive';
+  onboarding_completed?: boolean;
+}
+
+export type IntegrationSystemType = 'ERP' | 'WMS' | 'CRM' | 'Custom API';
+
+export interface EnterpriseIntegration {
+  id: string;
+  name: string;
+  system_type: IntegrationSystemType;
+  base_url: string;
+  api_version?: string;
+  is_active: boolean;
+  last_tested_at?: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface SystemSettings {

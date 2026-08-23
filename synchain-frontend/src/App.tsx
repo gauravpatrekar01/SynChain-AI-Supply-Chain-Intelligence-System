@@ -10,6 +10,7 @@ import { ForgotPasswordForm } from './components/auth/ForgotPasswordForm';
 import { ResetPasswordForm } from './components/auth/ResetPasswordForm';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Loader2 } from 'lucide-react';
+import { OnboardingPage } from './components/onboarding/OnboardingPage';
 
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -40,6 +41,7 @@ export function App() {
               <Route path="/register" element={<PublicRoute><RegisterForm /></PublicRoute>} />
               <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordForm /></PublicRoute>} />
               <Route path="/reset-password" element={<PublicRoute><ResetPasswordForm /></PublicRoute>} />
+              <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
               
               {/* Protected Routes */}
               <Route path="/*" element={

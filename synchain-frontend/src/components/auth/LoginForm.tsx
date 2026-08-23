@@ -16,8 +16,8 @@ export const LoginForm: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
-      navigate('/');
+      const user = await login(email, password);
+      navigate(user.onboarding_completed ? '/' : '/onboarding');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Invalid email or password');
     } finally {

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "synchain_jwt_secret_token_change_in_production"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    INTEGRATION_ENCRYPTION_KEY: str = ""
     
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587

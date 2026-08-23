@@ -13,6 +13,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     is_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
+    onboarding_completed = Column(Boolean, nullable=False, default=False, server_default="false")
     last_login = Column(DateTime(timezone=True), nullable=True)
     role = Column(String(100), nullable=False, default="user")
     avatar_url = Column(String, nullable=True)
@@ -38,6 +39,21 @@ class EmailVerificationToken(Base):
     expires_at = Column(DateTime(timezone=True), nullable=False)
     used = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EnterpriseIntegration(Base):
+    __tablename__ = "enterprise_integrations"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    system_type = Column(String(50), nullable=False)
+    base_url = Column(String(2048), nullable=False)
+    api_version = Column(String(100), nullable=True)
+    encrypted_api_key = Column(String, nullable=False)
+    encrypted_api_secret = Column(String, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    last_tested_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class Supplier(Base):
     __tablename__ = "suppliers"

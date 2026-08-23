@@ -7,7 +7,8 @@ interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password?: string) => Promise<void>;
+  login: (email: string, password?: string) => Promise<UserProfile>;
+  completeOnboarding: () => void;
   logout: () => void;
 }
 
@@ -17,6 +18,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const mapUser = (userData: UserProfile): UserProfile => {
+    const data: any = userData;
+    return {
+      ...userData,
+      avatarUrl: data.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64',
+      accessTier: data.access_tier || 'Standard Executive',
+    } as unknown as UserProfile;
+  };
 
   // Initialize Auth
   useEffect(() => {
@@ -28,12 +38,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userData = await apiService.getMe();
           // Map backend snake_case to frontend camelCase if needed, 
           // or assume api returns camelCase/we handle it here.
-          const data: any = userData;
-          setUser({
-            ...userData,
-            avatarUrl: data.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64',
-            accessTier: data.access_tier || 'Standard Executive',
-          } as unknown as UserProfile);
+          setUser(mapUser(userData));
           setIsAuthenticated(true);
         } catch (error) {
           console.error("Failed to verify token on load", error);
@@ -54,19 +59,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('synchain_auth_token', res.access_token);
       
       const userData = await apiService.getMe();
-      const data: any = userData;
-      setUser({
-        ...userData,
-        avatarUrl: data.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64',
-        accessTier: data.access_tier || 'Standard Executive',
-      } as unknown as UserProfile);
+      const mappedUser = mapUser(userData);
+      setUser(mappedUser);
       
       setIsAuthenticated(true);
       soundFX.playSuccessFanfare();
+      return mappedUser;
     } catch (error) {
       console.error("Login failed", error);
       throw error; // Rethrow to let the UI handle the error
     }
+  };
+
+  const completeOnboarding = () => {
+    setUser((currentUser) => currentUser ? { ...currentUser, onboarding_completed: true } : currentUser);
   };
 
   const logout = () => {
@@ -84,6 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated,
         isLoading,
         login,
+        completeOnboarding,
         logout,
       }}
     >

@@ -5,6 +5,8 @@ from passlib.context import CryptContext
 from app.core.config import settings
 import hashlib
 import secrets
+import base64
+from cryptography.fernet import Fernet
 
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
 
@@ -42,3 +44,15 @@ def generate_secure_token() -> str:
 def hash_token(token: str) -> str:
     """Hashes a secure token for database storage."""
     return hashlib.sha256(token.encode()).hexdigest()
+
+def _integration_cipher() -> Fernet:
+    key = settings.INTEGRATION_ENCRYPTION_KEY
+    if not key:
+        key = base64.urlsafe_b64encode(hashlib.sha256(settings.JWT_SECRET.encode()).digest()).decode()
+    return Fernet(key.encode())
+
+def encrypt_secret(value: str) -> str:
+    return _integration_cipher().encrypt(value.encode()).decode()
+
+def decrypt_secret(value: str) -> str:
+    return _integration_cipher().decrypt(value.encode()).decode()
