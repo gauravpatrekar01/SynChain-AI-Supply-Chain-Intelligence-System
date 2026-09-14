@@ -82,18 +82,27 @@ export const apiService = {
     return res.data;
   },
 
-  async testIntegration(data: { name: string; system_type: IntegrationSystemType; base_url: string; api_key: string; api_secret?: string; api_version?: string }): Promise<{ success: boolean; message: string }> {
+  async testIntegration(data: { name: string; system_type: IntegrationSystemType; base_url: string; auth_type?: string; api_key?: string; api_secret?: string; api_version?: string; configuration?: any }): Promise<{ success: boolean; message: string }> {
     const res = await apiClient.post('/integrations/test', data);
     return res.data;
   },
 
-  async createIntegration(data: { name: string; system_type: IntegrationSystemType; base_url: string; api_key: string; api_secret?: string; api_version?: string }): Promise<EnterpriseIntegration> {
+  async createIntegration(data: { name: string; system_type: IntegrationSystemType; base_url: string; auth_type?: string; api_key?: string; api_secret?: string; api_version?: string; configuration?: any }): Promise<EnterpriseIntegration> {
     const res = await apiClient.post('/integrations', data);
     return res.data;
   },
 
   async getIntegrations(): Promise<EnterpriseIntegration[]> {
     const res = await apiClient.get('/integrations');
+    return res.data;
+  },
+
+  async deleteIntegration(id: string): Promise<void> {
+    await apiClient.delete(`/integrations/${id}`);
+  },
+
+  async syncIntegration(id: string): Promise<{ success: boolean; message: string; results?: any }> {
+    const res = await apiClient.post(`/integrations/${id}/sync`);
     return res.data;
   },
 

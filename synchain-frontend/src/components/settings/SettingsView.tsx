@@ -15,6 +15,7 @@ import { useSupplyChain } from '../../context/SupplyChainContext';
 import { Button } from '../common/Button';
 import { NeonBadge } from '../common/NeonBadge';
 import { soundFX } from '../../services/audioService';
+import { IntegrationsManager } from './IntegrationsManager';
 
 export const SettingsView: React.FC = () => {
   const { settings, updateSettings, theme, setTheme } = useTheme();
@@ -135,64 +136,8 @@ export const SettingsView: React.FC = () => {
         </div>
 
         {/* ERP & API Connectors */}
-        <div className="lg:col-span-2 rounded-2xl glass-panel border border-white/10 p-6 space-y-4">
-          <h3 className="text-base font-bold text-white font-display flex items-center gap-2">
-            <Database className="w-4 h-4 text-emerald-400" />
-            <span>Enterprise Gateway Connectors</span>
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-white">SAP S/4HANA Cloud</h4>
-                <NeonBadge variant="optimal" size="sm">
-                  CONNECTED
-                </NeonBadge>
-              </div>
-              <p className="text-[11px] text-slate-400">EDI 850 / Purchase Orders</p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-white">Oracle NetSuite ERP</h4>
-                <NeonBadge variant="optimal" size="sm">
-                  CONNECTED
-                </NeonBadge>
-              </div>
-              <p className="text-[11px] text-slate-400">Inventory & Bill of Materials</p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-white">Spire AIS Satellite</h4>
-                <NeonBadge variant="cyan" size="sm">
-                  14ms STREAM
-                </NeonBadge>
-              </div>
-              <p className="text-[11px] text-slate-400">Live Global Maritime Telemetry</p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-white/10">
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={<RotateCcw className="w-3.5 h-3.5" />}
-              onClick={handleReset}
-            >
-              Reset Demo State
-            </Button>
-
-            <Button
-              variant="glow"
-              size="sm"
-              isLoading={testStatus === 'testing'}
-              leftIcon={<CheckCircle2 className="w-3.5 h-3.5" />}
-              onClick={handleTestAPI}
-            >
-              {testStatus === 'success' ? 'All Endpoints Nominal (200 OK)' : 'Ping All Enterprise Gateways'}
-            </Button>
-          </div>
+        <div className="lg:col-span-2">
+          <IntegrationsManager />
         </div>
       </div>
     </div>
