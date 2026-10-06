@@ -11,6 +11,7 @@ import { ResetPasswordForm } from './components/auth/ResetPasswordForm';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { Loader2 } from 'lucide-react';
 import { OnboardingPage } from './components/onboarding/OnboardingPage';
+import { LandingPage } from './components/landing/LandingPage';
 
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -24,7 +25,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
   
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
 };
@@ -37,6 +38,7 @@ export function App() {
           <SupplyChainProvider>
             <Routes>
               {/* Public Routes */}
+              <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
               <Route path="/login" element={<PublicRoute><LoginForm /></PublicRoute>} />
               <Route path="/register" element={<PublicRoute><RegisterForm /></PublicRoute>} />
               <Route path="/forgot-password" element={<PublicRoute><ForgotPasswordForm /></PublicRoute>} />
@@ -44,7 +46,7 @@ export function App() {
               <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
               
               {/* Protected Routes */}
-              <Route path="/*" element={
+              <Route path="/dashboard/*" element={
                 <ProtectedRoute>
                   <MainLayout />
                 </ProtectedRoute>
