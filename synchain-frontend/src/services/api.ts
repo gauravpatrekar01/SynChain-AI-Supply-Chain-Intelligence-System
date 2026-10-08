@@ -13,6 +13,12 @@ import {
   UserProfile,
   EnterpriseIntegration,
   IntegrationSystemType,
+  IngestionUploadResponse,
+  IngestionPreviewResponse,
+  IngestionValidationResponse,
+  IngestionExecuteResponse,
+  ImportHistoryItem,
+  CanonicalFieldMeta,
 } from '../types';
 import {
   mockAIHealth,
@@ -248,5 +254,55 @@ export const apiService = {
     } catch {
       return mockIncidentAlerts;
     }
+  },
+
+  // --- CSV / Excel Multi-Source Data Ingestion ---
+  async uploadIngestionFile(file: File): Promise<IngestionUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post('/ingestion/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+
+  async getIngestionPreview(importId: string, sheet?: string): Promise<IngestionPreviewResponse> {
+    const params = sheet ? { sheet } : {};
+    const res = await apiClient.get(`/ingestion/${importId}/preview`, { params });
+    return res.data;
+  },
+
+  async validateIngestion(
+    importId: string,
+    payload: {
+      sheet_name?: string;
+      column_mapping?: Record<string, string | null>;
+      entity_type?: string;
+    }
+  ): Promise<IngestionValidationResponse> {
+    const res = await apiClient.post(`/ingestion/${importId}/validate`, payload);
+    return res.data;
+  },
+
+  async executeIngestion(
+    importId: string,
+    payload: {
+      sheet_name?: string;
+      column_mapping?: Record<string, string | null>;
+      entity_type?: string;
+    }
+  ): Promise<IngestionExecuteResponse> {
+    const res = await apiClient.post(`/ingestion/${importId}/import`, payload);
+    return res.data;
+  },
+
+  async getIngestionHistory(): Promise<ImportHistoryItem[]> {
+    const res = await apiClient.get('/ingestion/history');
+    return res.data;
+  },
+
+  async getCanonicalSchema(): Promise<{ fields: Record<string, CanonicalFieldMeta> }> {
+    const res = await apiClient.get('/ingestion/canonical-schema');
+    return res.data;
   },
 };

@@ -230,3 +230,35 @@ class ModelRun(Base):
     metrics = Column(JSONB, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+
+class DataImport(Base):
+    __tablename__ = "data_imports"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    file_type = Column(String(50), nullable=False)  # 'csv', 'xlsx', 'xls'
+    source_type = Column(String(50), nullable=False, default="file")  # 'csv', 'excel'
+    entity_type = Column(String(50), nullable=True)  # 'inventory', 'products', 'suppliers', 'warehouses', 'orders', 'multi'
+    status = Column(String(50), nullable=False, default="pending")  # 'pending', 'processing', 'completed', 'failed', 'partial'
+    rows_total = Column(Integer, nullable=False, default=0)
+    rows_processed = Column(Integer, nullable=False, default=0)
+    rows_failed = Column(Integer, nullable=False, default=0)
+    columns_detected = Column(JSONB, nullable=True)
+    column_mapping = Column(JSONB, nullable=True)
+    error_summary = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+class ImportedRecord(Base):
+    __tablename__ = "imported_records"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    import_id = Column(UUID(as_uuid=True), ForeignKey("data_imports.id", ondelete="CASCADE"), nullable=False, index=True)
+    entity_type = Column(String(50), nullable=False)
+    source_type = Column(String(50), nullable=False)  # 'csv', 'excel', 'erpnext', etc.
+    source_file = Column(String(255), nullable=False)
+    row_number = Column(Integer, nullable=False)
+    raw_data = Column(JSONB, nullable=False)
+    normalized_data = Column(JSONB, nullable=False)
+    target_entity_id = Column(UUID(as_uuid=True), nullable=True)
+    status = Column(String(50), nullable=False, default="imported")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

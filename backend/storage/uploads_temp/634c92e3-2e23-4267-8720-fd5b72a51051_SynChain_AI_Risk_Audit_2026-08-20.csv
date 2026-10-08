@@ -1,0 +1,6 @@
+Risk_ID,Title,Probability,Severity,Exposure_USD
+"r1","Taiwan Strait Maritime Congestion (Typhoon Gaemi)",5,4,18450000
+"r2","TSMC Wafer Fab 18 Contamination Alert",4,5,24000000
+"r3","Red Sea Transit Surcharges & Rerouting",4,3,4800000
+"r4","Hamburg Port Cargo Handler Strike",3,3,1200000
+"r5","Lithium Hydroxide Commodity Price Spike",3,2,850000

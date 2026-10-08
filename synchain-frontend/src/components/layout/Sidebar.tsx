@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  UploadCloud,
 } from 'lucide-react';
 import { soundFX } from '../../services/audioService';
 import { useSupplyChain } from '../../context/SupplyChainContext';
@@ -69,6 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
     {
       title: 'Enterprise Management',
       items: [
+        { id: 'data-sources', label: 'Data Ingestion Hub', icon: UploadCloud, badge: 'CSV / Excel', badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40' },
         { id: 'reports', label: 'Reports & Exports', icon: FileText },
         { id: 'settings', label: 'System Settings', icon: Settings },
       ],

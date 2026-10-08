@@ -18,6 +18,7 @@ import { InventoryBufferView } from '../inventory/InventoryBufferView';
 import { LiveShipmentsView } from '../shipments/LiveShipmentsView';
 import { ReportsView } from '../reports/ReportsView';
 import { SettingsView } from '../settings/SettingsView';
+import { DataIngestionView } from '../ingestion/DataIngestionView';
 
 export const MainLayout: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
@@ -46,6 +47,9 @@ export const MainLayout: React.FC = () => {
         return <LiveShipmentsView onNavigate={setCurrentPage} />;
       case 'reports':
         return <ReportsView />;
+      case 'data-sources':
+      case 'ingestion':
+        return <DataIngestionView onNavigate={setCurrentPage} />;
       case 'settings':
         return <SettingsView />;
       case 'dashboard':

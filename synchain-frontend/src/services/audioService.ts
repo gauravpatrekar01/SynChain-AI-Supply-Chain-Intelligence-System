@@ -40,7 +40,7 @@ class SoundFXService {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
-      
+
       osc.type = 'sine';
       osc.frequency.setValueAtTime(1200, this.ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.04);
@@ -65,7 +65,7 @@ class SoundFXService {
       this.initCtx();
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
-      
+
       [
         { freq: 880, time: now, dur: 0.12 },
         { freq: 1320, time: now + 0.08, dur: 0.2 },
@@ -129,7 +129,7 @@ class SoundFXService {
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
       const chord = [523.25, 659.25, 783.99, 1046.50]; // C Major
-      
+
       chord.forEach((freq, idx) => {
         if (!this.ctx) return;
         const osc = this.ctx.createOscillator();
@@ -176,6 +176,11 @@ class SoundFXService {
     } catch {
       // ignore
     }
+  }
+
+  // Error tone
+  public playError() {
+    this.playWarning();
   }
 }
 

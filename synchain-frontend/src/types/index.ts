@@ -400,6 +400,7 @@ export interface EnterpriseIntegration {
   system_type: IntegrationSystemType;
   base_url: string;
   api_version?: string;
+  status?: string;
   is_active: boolean;
   last_tested_at?: string;
   created_at: string;
@@ -419,3 +420,103 @@ export interface SystemSettings {
   autoRunAISimulation: boolean;
   riskAlertThresholdPct: number;
 }
+
+// --- Data Ingestion & Import Tracking ---
+export interface CanonicalFieldMeta {
+  label: string;
+  description: string;
+  aliases: string[];
+}
+
+export interface IngestionUploadResponse {
+  success: boolean;
+  import_id: string;
+  filename: string;
+  file_type: string;
+  source_type: string;
+  sheets: string[];
+  selected_sheet?: string;
+  columns_detected: string[];
+  auto_mapping: Record<string, string | null>;
+  canonical_schema: Record<string, CanonicalFieldMeta>;
+  rows_detected: number;
+  preview_rows: Record<string, any>[];
+  status: string;
+}
+
+export interface IngestionPreviewResponse {
+  import_id: string;
+  filename: string;
+  file_type: string;
+  source_type: string;
+  sheets: string[];
+  selected_sheet?: string;
+  columns_detected: string[];
+  auto_mapping: Record<string, string | null>;
+  canonical_schema: Record<string, CanonicalFieldMeta>;
+  rows_detected: number;
+  preview_rows: Record<string, any>[];
+  status: string;
+}
+
+export interface IngestionValidationError {
+  row: number;
+  field: string;
+  raw_value: any;
+  message: string;
+}
+
+export interface IngestionValidationSummary {
+  is_valid: boolean;
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  duplicates_count: number;
+  summary: string;
+  errors: IngestionValidationError[];
+  warnings: IngestionValidationError[];
+}
+
+export interface IngestionValidationResponse {
+  import_id: string;
+  filename: string;
+  validation: IngestionValidationSummary;
+  column_mapping: Record<string, string | null>;
+  preview_normalized: Record<string, any>[];
+}
+
+export interface IngestionExecuteResponse {
+  success: boolean;
+  import_id: string;
+  filename: string;
+  file_type: string;
+  source_type: string;
+  status: string;
+  rows_total: number;
+  rows_processed: number;
+  rows_failed: number;
+  entities_created: {
+    products: number;
+    suppliers: number;
+    warehouses: number;
+    inventory: number;
+    orders: number;
+  };
+  columns_detected: string[];
+  message: string;
+}
+
+export interface ImportHistoryItem {
+  id: string;
+  filename: string;
+  file_type: string;
+  source_type: string;
+  status: string;
+  rows_total: number;
+  rows_processed: number;
+  rows_failed: number;
+  columns_detected: string[];
+  created_at: string;
+  completed_at?: string;
+}
+
