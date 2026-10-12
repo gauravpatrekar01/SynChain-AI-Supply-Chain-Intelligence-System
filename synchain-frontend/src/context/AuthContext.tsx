@@ -50,6 +50,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initializeAuth();
+
+    const handleAuthExpired = () => {
+      setUser(null);
+      setIsAuthenticated(false);
+    };
+    window.addEventListener('synchain_auth_expired', handleAuthExpired);
+    return () => window.removeEventListener('synchain_auth_expired', handleAuthExpired);
   }, []);
 
   const login = async (email: string, password?: string) => {

@@ -26,8 +26,11 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 
 def validate_system_type(system_type: str) -> None:
-    if system_type not in SYSTEM_TYPES:
-        raise HTTPException(status_code=422, detail="Unsupported system type")
+    if not system_type or not any(s.lower() == system_type.strip().lower() for s in SYSTEM_TYPES):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported system type: '{system_type}'. Supported types: {', '.join(sorted(SYSTEM_TYPES))}"
+        )
 
 
 @router.get("/health", response_model=AllIntegrationsHealthResponse)

@@ -36,12 +36,13 @@ class ForecastRequest(BaseModel):
     horizonDays: int = 30
 
 class SimulationRequest(BaseModel):
-    scenarioName: str
-    disruptionType: str
-    targetEntityId: str
-    targetEntityName: str
-    durationDays: int
-    severityPct: int
+    scenarioName: Optional[str] = "Disruption Scenario"
+    disruptionType: Optional[str] = "supplier_outage"
+    targetEntityId: Optional[str] = "entity-target-1"
+    targetEntityName: Optional[str] = "Primary Supplier Node"
+    targetType: Optional[str] = "supplier"
+    durationDays: int = 14
+    severityPct: int = 50
     includeSecondTierCascade: bool = True
     autoMitigate: bool = True
 
@@ -112,14 +113,35 @@ async def get_entity_risk(entity_type: str, entity_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+_recent_simulations: List[Dict[str, Any]] = []
+
+@router.post("/simulation")
 @router.post("/scenarios/simulate")
 async def run_simulation(request: SimulationRequest):
     try:
         # Run Monte Carlo Simulation
         simulation_result = sim_service.run_monte_carlo_simulation(request.model_dump())
+        _recent_simulations.insert(0, simulation_result)
+        if len(_recent_simulations) > 20:
+            _recent_simulations.pop()
         return simulation_result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/simulation/history")
+@router.get("/scenarios/history")
+async def get_simulation_history():
+    """Returns recent simulation results or default baseline run."""
+    if not _recent_simulations:
+        default_run = sim_service.run_monte_carlo_simulation({
+            "scenarioName": "Baseline Supply Chain Stress Test",
+            "disruptionType": "supplier_outage",
+            "targetEntityName": "Global Tier-1 Assemblers",
+            "durationDays": 14,
+            "severityPct": 50,
+        })
+        _recent_simulations.append(default_run)
+    return _recent_simulations
 
 @router.post("/copilot/chat")
 async def chat_with_copilot(request: CopilotRequest):

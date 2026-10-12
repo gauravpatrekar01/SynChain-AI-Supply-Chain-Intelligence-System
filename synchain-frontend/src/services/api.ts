@@ -62,6 +62,22 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+// Handle expired or invalid session tokens cleanly
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      const url = error.config?.url || '';
+      if (!url.includes('/auth/login') && !url.includes('/auth/register')) {
+        console.warn('Session expired or invalid. Clearing credentials.');
+        localStorage.removeItem('synchain_auth_token');
+        window.dispatchEvent(new CustomEvent('synchain_auth_expired'));
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const apiService = {
   // Authentication
   async register(data: any): Promise<UserProfile> {

@@ -5,7 +5,16 @@ import uuid
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
 
-SYSTEM_TYPES = {"ERPNext", "Generic REST", "SAP S/4HANA Cloud", "Oracle NetSuite ERP"}
+SYSTEM_TYPES = {
+    "ERPNext",
+    "Generic REST",
+    "SAP S/4HANA Cloud",
+    "Oracle NetSuite ERP",
+    "ERP",
+    "WMS",
+    "CRM",
+    "Custom API",
+}
 AUTH_TYPES = {"api_key", "bearer", "basic", "none"}
 
 

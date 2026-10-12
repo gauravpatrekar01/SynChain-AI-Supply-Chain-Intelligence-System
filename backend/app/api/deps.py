@@ -31,10 +31,20 @@ def get_current_user(
         raise credentials_exception
         
     user_id: str = payload.get("sub")
-    if user_id is None:
+    if not user_id:
         raise credentials_exception
-        
-    user = db.query(User).filter(User.id == user_id).first()
+
+    import uuid
+    user = None
+    try:
+        try:
+            val_uuid = uuid.UUID(str(user_id))
+            user = db.query(User).filter(User.id == val_uuid).first()
+        except (ValueError, AttributeError):
+            user = db.query(User).filter(User.email == str(user_id)).first()
+    except Exception:
+        raise credentials_exception
+
     if user is None:
         raise credentials_exception
         

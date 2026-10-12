@@ -266,3 +266,81 @@ def test_dashboard_scenario_simulation_non_destructive():
     assert "estimatedRevenueLossUsd" in data
     assert "mitigationStrategies" in data
     assert data["estimatedRevenueLossUsd"] > 0
+
+
+# 5. Fix Verification: Simulation Route (/simulation and /simulation/history)
+def test_simulation_endpoints_resolved():
+    payload = {
+        "scenarioName": "Port Congestion Simulation",
+        "disruptionType": "logistics_delay",
+        "targetEntityId": "port-la",
+        "targetEntityName": "Port of Los Angeles",
+        "durationDays": 10,
+        "severityPct": 45,
+        "includeSecondTierCascade": True,
+        "autoMitigate": True
+    }
+    # Verify POST /api/v1/simulation returns 200, not 404
+    res_post = client.post("/api/v1/simulation", json=payload)
+    assert res_post.status_code == 200
+    data = res_post.json()
+    assert "scenarioId" in data
+    assert "financialLossEstimateUsd" in data
+    assert "cascadingTimeline" in data
+
+    # Verify GET /api/v1/simulation/history returns 200, not 404
+    res_history = client.get("/api/v1/simulation/history")
+    assert res_history.status_code == 200
+    history = res_history.json()
+    assert isinstance(history, list)
+    assert len(history) > 0
+
+
+# 6. Fix Verification: Integration Creation with Frontend System Types (ERP, WMS, CRM, Custom API)
+def test_create_integration_frontend_types_no_422():
+    # Test 'ERP' system type from Onboarding
+    erp_payload = {
+        "name": "Production ERP Onboarding Test",
+        "system_type": "ERP",
+        "base_url": "http://localhost:8080",
+        "auth_type": "api_key",
+        "api_key": "test_erp_key",
+        "api_secret": "test_erp_secret"
+    }
+    res_erp = client.post("/api/v1/integrations", json=erp_payload)
+    assert res_erp.status_code == 201
+    assert res_erp.json()["system_type"] == "ERP"
+
+    # Test 'Custom API' system type from Onboarding
+    custom_payload = {
+        "name": "Custom Logistics API Test",
+        "system_type": "Custom API",
+        "base_url": "https://api.logistics.com",
+        "auth_type": "bearer",
+        "api_key": "tok_bearer_123"
+    }
+    res_custom = client.post("/api/v1/integrations", json=custom_payload)
+    assert res_custom.status_code == 201
+    assert res_custom.json()["system_type"] == "Custom API"
+
+
+# 7. Fix Verification: Safe sub claim handling in get_current_user
+def test_auth_deps_safe_sub_uuid_and_email():
+    from app.core.security import create_access_token
+    from app.api.deps import get_current_user
+    db = SessionLocal()
+    try:
+        user = db.query(User).first()
+        assert user is not None
+
+        # 1. Test token with standard UUID sub
+        token_uuid = create_access_token(str(user.id))
+        user_resolved = get_current_user(db=db, token=token_uuid)
+        assert user_resolved.id == user.id
+
+        # 2. Test token with email sub (safely handled without psycopg2 DataError)
+        token_email = create_access_token(user.email)
+        user_resolved_email = get_current_user(db=db, token=token_email)
+        assert user_resolved_email.email == user.email
+    finally:
+        db.close()
