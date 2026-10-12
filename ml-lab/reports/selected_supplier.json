@@ -1,0 +1,15 @@
+{
+    "supplier_id": "SUP-006",
+    "supplier_name": "Supplier F",
+    "location": "Delhi",
+    "component_type": "Battery",
+    "estimated_delay_probability": 0.2783,
+    "estimated_delay_percent": 27.83,
+    "average_lead_time_days": 2.0,
+    "quality_rate": 0.83,
+    "unit_cost_index": 99.0,
+    "available_capacity_units": 5175,
+    "on_time_delivery_rate": 0.973,
+    "recommendation_score": 0.39,
+    "prediction_source": "synthetic_development_data"
+}

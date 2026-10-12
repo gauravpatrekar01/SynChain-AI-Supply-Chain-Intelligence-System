@@ -1,0 +1,23 @@
+SYNCHAIN AI - MODEL EVALUATION
+
+Total records: 1500
+Training records: 1200
+Testing records: 300
+Accuracy: 0.6467
+ROC-AUC: 0.6085
+
+Classification Report:
+              precision    recall  f1-score   support
+
+           0       0.74      0.79      0.77       219
+           1       0.31      0.26      0.28        81
+
+    accuracy                           0.65       300
+   macro avg       0.53      0.52      0.52       300
+weighted avg       0.63      0.65      0.64       300
+
+Confusion Matrix:
+[[173  46]
+ [ 60  21]]
+
+WARNING: Model trained on synthetic data. Metrics do not establish real-world accuracy.
