@@ -731,10 +731,136 @@ class IntegrationHealthService:
 
     @classmethod
     async def check_storage(cls, db: Session) -> Dict[str, Any]:
-        """Performs lightweight check on S3 / Cloudflare R2 / Neon Object Storage."""
+        """Performs lightweight check on Cloudinary Cloud Storage or S3-compatible storage."""
+        start_time = time.perf_counter()
+        
+        # Priority 1: Cloudinary Cloud Storage
+        if settings.CLOUDINARY_API_KEY:
+            name = "Cloudinary Cloud Storage"
+            category = "storage"
+            cloud_name = settings.CLOUDINARY_CLOUD_NAME or ""
+            api_key = settings.CLOUDINARY_API_KEY or ""
+            api_secret = settings.CLOUDINARY_API_SECRET or ""
+
+            if not cloud_name:
+                return {
+                    "name": name,
+                    "category": category,
+                    "configuration_status": "configured",
+                    "connection_status": "degraded",
+                    "last_checked_at": datetime.now(timezone.utc),
+                    "last_successful_check_at": None,
+                    "response_time_ms": 0.0,
+                    "last_sync_at": None,
+                    "error_category": "config_missing",
+                    "error_message": "CLOUDINARY_API_KEY provided, but CLOUDINARY_CLOUD_NAME is required in .env",
+                    "is_enabled": True,
+                    "data_freshness": "Incomplete configuration",
+                    "details": {
+                        "api_key_configured": True,
+                        "cloud_name_missing": True,
+                        "hint": "Set CLOUDINARY_CLOUD_NAME in backend/.env",
+                    },
+                }
+
+            last_success = cls.get_last_successful_check(db, name)
+            ping_url = f"https://api.cloudinary.com/v1_1/{cloud_name}/ping"
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(ping_url, auth=(api_key, api_secret))
+                    latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+                    if resp.status_code == 200:
+                        now_dt = datetime.now(timezone.utc)
+                        return {
+                            "name": name,
+                            "category": category,
+                            "configuration_status": "configured",
+                            "connection_status": "healthy",
+                            "last_checked_at": now_dt,
+                            "last_successful_check_at": now_dt,
+                            "response_time_ms": latency_ms,
+                            "last_sync_at": None,
+                            "error_category": None,
+                            "error_message": None,
+                            "is_enabled": True,
+                            "data_freshness": "Cloudinary CDN Operational",
+                            "details": {
+                                "cloud_name": cloud_name,
+                                "service": "Cloudinary Media & Object Storage",
+                                "status": "active",
+                            },
+                        }
+                    elif resp.status_code == 401:
+                        return {
+                            "name": name,
+                            "category": category,
+                            "configuration_status": "configured",
+                            "connection_status": "unhealthy",
+                            "last_checked_at": datetime.now(timezone.utc),
+                            "last_successful_check_at": last_success,
+                            "response_time_ms": latency_ms,
+                            "last_sync_at": None,
+                            "error_category": "auth_error",
+                            "error_message": "Cloudinary authentication failed: verify CLOUDINARY_CLOUD_NAME and API credentials",
+                            "is_enabled": True,
+                            "data_freshness": "Auth Error",
+                            "details": {"cloud_name": cloud_name, "http_status": 401},
+                        }
+                    else:
+                        return {
+                            "name": name,
+                            "category": category,
+                            "configuration_status": "configured",
+                            "connection_status": "degraded",
+                            "last_checked_at": datetime.now(timezone.utc),
+                            "last_successful_check_at": last_success,
+                            "response_time_ms": latency_ms,
+                            "last_sync_at": None,
+                            "error_category": "http_error",
+                            "error_message": f"Cloudinary ping returned HTTP {resp.status_code}",
+                            "is_enabled": True,
+                            "data_freshness": "Degraded",
+                            "details": {"cloud_name": cloud_name, "http_status": resp.status_code},
+                        }
+            except httpx.TimeoutException:
+                latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+                return {
+                    "name": name,
+                    "category": category,
+                    "configuration_status": "configured",
+                    "connection_status": "unhealthy",
+                    "last_checked_at": datetime.now(timezone.utc),
+                    "last_successful_check_at": last_success,
+                    "response_time_ms": latency_ms,
+                    "last_sync_at": None,
+                    "error_category": "timeout",
+                    "error_message": "Cloudinary ping timed out after 5.0s",
+                    "is_enabled": True,
+                    "data_freshness": "Unavailable",
+                    "details": {"cloud_name": cloud_name},
+                }
+            except Exception as e:
+                latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+                return {
+                    "name": name,
+                    "category": category,
+                    "configuration_status": "configured",
+                    "connection_status": "unhealthy",
+                    "last_checked_at": datetime.now(timezone.utc),
+                    "last_successful_check_at": last_success,
+                    "response_time_ms": latency_ms,
+                    "last_sync_at": None,
+                    "error_category": "connection_error",
+                    "error_message": _sanitize_error_message(f"Cloudinary connection error: {str(e)}"),
+                    "is_enabled": True,
+                    "data_freshness": "Unavailable",
+                    "details": {"cloud_name": cloud_name},
+                }
+
+        # Fallback Priority 2: AWS / Cloudflare R2 / Neon S3
         name = "Cloudflare R2 / S3 Object Storage"
         category = "storage"
-        start_time = time.perf_counter()
         s3_url = settings.AWS_ENDPOINT_URL_S3 or ""
 
         if not s3_url:
@@ -748,7 +874,7 @@ class IntegrationHealthService:
                 "response_time_ms": 0.0,
                 "last_sync_at": None,
                 "error_category": "config_missing",
-                "error_message": "AWS_ENDPOINT_URL_S3 is not configured",
+                "error_message": "No storage provider configured (Cloudinary or AWS S3)",
                 "is_enabled": False,
                 "data_freshness": "Not configured",
                 "details": {},
@@ -980,7 +1106,7 @@ class IntegrationHealthService:
             result = await cls.check_openweather(db)
         elif "news" in target:
             result = await cls.check_newsdata(db)
-        elif "storage" in target or "r2" in target or "s3" in target:
+        elif "cloudinary" in target or "storage" in target or "r2" in target or "s3" in target:
             result = await cls.check_storage(db)
         elif "smtp" in target or "email" in target:
             result = await cls.check_smtp(db)

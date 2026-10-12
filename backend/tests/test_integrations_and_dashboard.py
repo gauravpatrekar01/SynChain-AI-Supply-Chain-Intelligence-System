@@ -149,6 +149,42 @@ def test_erpnext_timeout_handling():
         db.close()
 
 
+def test_cloudinary_storage_health_check():
+    import asyncio
+    db = SessionLocal()
+    try:
+        from app.core.config import settings
+        original_key = settings.CLOUDINARY_API_KEY
+        original_cloud = settings.CLOUDINARY_CLOUD_NAME
+
+        settings.CLOUDINARY_API_KEY = "699585677715957"
+        settings.CLOUDINARY_CLOUD_NAME = "demo_supply_chain"
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_get.return_value = mock_resp
+
+            result = asyncio.run(IntegrationHealthService.check_storage(db))
+            assert result["name"] == "Cloudinary Cloud Storage"
+            assert result["connection_status"] == "healthy"
+            assert result["configuration_status"] == "configured"
+            assert result["details"]["cloud_name"] == "demo_supply_chain"
+
+        # Test missing cloud_name
+        settings.CLOUDINARY_CLOUD_NAME = ""
+        result_missing = asyncio.run(IntegrationHealthService.check_storage(db))
+        assert result_missing["name"] == "Cloudinary Cloud Storage"
+        assert result_missing["connection_status"] == "degraded"
+        assert result_missing["error_category"] == "config_missing"
+
+        # Restore
+        settings.CLOUDINARY_API_KEY = original_key
+        settings.CLOUDINARY_CLOUD_NAME = original_cloud
+    finally:
+        db.close()
+
+
 # 4. Real-Data Dashboard Endpoints
 def test_dashboard_overview():
     res = client.get("/api/v1/dashboard/overview")

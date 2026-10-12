@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "us-east-2"
 
+    # Cloudinary Cloud Storage
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
+    CLOUDINARY_URL: str = ""
+
     HEALTH_CHECK_INTERVAL_SECONDS: int = 900
 
     class Config:
@@ -46,5 +52,5 @@ class Settings(BaseSettings):
         extra = "allow"
 
 
-
+# SynChain core configuration singleton
 settings = Settings()
