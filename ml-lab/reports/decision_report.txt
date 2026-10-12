@@ -1,0 +1,72 @@
+=================================================================
+             SYNCHAIN AI - DECISION REPORT
+=================================================================
+
+1. SIMULATION OVERVIEW
+Scenarios analyzed: BASELINE, MITIGATED, AUTOMATIC REPLENISHMENT
+Simulation period: 30 days
+
+2. INVENTORY COMPARISON
+
+BASELINE:
+  Ending inventory: 0 units
+  Total unmet demand: 1700 units
+  Days with stockout: 17
+  First stockout: Day 4
+
+MITIGATED:
+  Ending inventory: 0 units
+  Total unmet demand: 1700 units
+  Days with stockout: 17
+  First stockout: Day 14
+
+AUTOMATIC REPLENISHMENT:
+  Ending inventory: 300 units
+  Total unmet demand: 0 units
+  Days with stockout: 0
+  First stockout: No stockout
+
+3. SELECTED SUPPLIER
+Recommended supplier: Supplier F
+Supplier ID: SUP-006
+Location: Delhi
+Component type: Battery
+Estimated delay probability: 28.26%
+Average lead time: 2 days
+Available capacity: 5175 units
+Supplier quality rate: 83.00%
+On-time delivery rate: 97.30%
+Prediction source: synthetic_development_data
+Recommendation score: 0.39
+
+4. REPLENISHMENT SETTINGS
+Observed order quantity: 1000 units
+Observed replenishment orders: 4
+Estimated reorder point: 300 units
+Selected supplier lead time: 2 days
+
+5. COMPARISON OF UNMET DEMAND AND STOCKOUTS
+- Alternative supplier unmet demand change: +0 units
+- Alternative supplier stockout delay: 10 days
+- Automatic replenishment unmet demand change from baseline: -1700 units
+- Automatic replenishment stockout days: 0
+
+6. SIMULATION FINDINGS
+- The alternative supplier delays the first stockout by 10 days.
+- Total unmet demand remains unchanged for the alternative supplier.
+- Automatic replenishment eliminates stockouts during the simulation.
+- Automatic replenishment reduces unmet demand by 1700 units.
+
+7. RECOMMENDED NEXT ACTION
+Automatic replenishment provides the strongest outcome in this simulation. Validate the operating assumptions before using it as the primary decision.
+
+8. IMPORTANT LIMITATIONS
+- Results depend on the simulation assumptions and inputs.
+- The dataset contains synthetic development data.
+- Estimated delay probability is not an observed shipment delay.
+- Supplier cost index is relative, not an actual currency price.
+- Supplier capacity does not necessarily represent uncommitted stock.
+- Replenishment behavior depends on the order policy and lead-time assumptions.
+- Validate model performance before real operational use.
+
+=================================================================
