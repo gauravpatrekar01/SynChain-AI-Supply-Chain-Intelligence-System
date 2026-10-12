@@ -12,7 +12,12 @@ from app.services.dashboard.analytics_service import DashboardAnalyticsService
 client = TestClient(app)
 
 
+_cached_test_user = None
+
 def override_auth_user():
+    global _cached_test_user
+    if _cached_test_user is not None:
+        return _cached_test_user
     db = SessionLocal()
     try:
         user = db.query(User).first()
@@ -28,7 +33,8 @@ def override_auth_user():
             db.add(user)
             db.commit()
             db.refresh(user)
-        return user
+        _cached_test_user = user
+        return _cached_test_user
     finally:
         db.close()
 
@@ -344,3 +350,36 @@ def test_auth_deps_safe_sub_uuid_and_email():
         assert user_resolved_email.email == user.email
     finally:
         db.close()
+
+
+# 8. MongoDB Atlas Integration and Health Checks
+def test_mongodb_atlas_health_check_direct():
+    import asyncio
+    from app.core.config import settings
+    if not settings.MONGODB_URL:
+        pytest.skip("MONGODB_URL not configured")
+    db = SessionLocal()
+    try:
+        res = asyncio.run(IntegrationHealthService.check_mongodb(db))
+        assert res["name"] == "MongoDB Atlas Primary Database"
+        assert res["category"] == "database"
+        assert res["configuration_status"] == "configured"
+        assert res["connection_status"] in ("healthy", "unhealthy")
+        assert res["response_time_ms"] > 0
+        if res["connection_status"] == "healthy":
+            assert "replicaSet" in res["details"]
+        else:
+            assert res["error_category"] in ("ip_access_denied", "connection_error", "timeout", "auth_error")
+    finally:
+        db.close()
+
+
+def test_trigger_mongodb_health_check_endpoint():
+    res = client.post("/api/v1/integrations/health/check", json={"integration_name": "MongoDB Atlas"})
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["integrations"]) == 1
+    int_res = data["integrations"][0]
+    assert int_res["name"] == "MongoDB Atlas Primary Database"
+    assert int_res["connection_status"] in ("healthy", "unhealthy")
+

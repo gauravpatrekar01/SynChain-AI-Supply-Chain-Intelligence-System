@@ -6,6 +6,8 @@ ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=ENV_PATH)
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/synchain"
+    MONGODB_URL: str = ""
+    MONGODB_DB_NAME: str = "synchain_db"
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USERNAME: str = "neo4j"
     NEO4J_PASSWORD: str = "password"
