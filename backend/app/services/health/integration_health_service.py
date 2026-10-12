@@ -1152,6 +1152,61 @@ class IntegrationHealthService:
             }
 
     @classmethod
+    async def check_ml_model(cls, db: Session) -> Dict[str, Any]:
+        """Performs live health and readiness check on ML delay prediction model and datasets."""
+        from app.services.ml.ml_service import MLIntelligenceService
+        name = "Machine Learning Delay Predictor"
+        category = "ai_ml"
+        start_time = time.perf_counter()
+
+        try:
+            health_info = await asyncio.to_thread(MLIntelligenceService.check_model_health)
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            status_val = health_info.get("status", "unknown")
+            is_healthy = status_val == "healthy"
+            last_success = datetime.now(timezone.utc) if is_healthy else cls.get_last_successful_check(db, name)
+
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "configured" if health_info.get("model_loaded") else "not_configured",
+                "connection_status": status_val,
+                "last_checked_at": datetime.now(timezone.utc),
+                "last_successful_check_at": last_success,
+                "response_time_ms": latency_ms,
+                "last_sync_at": None,
+                "error_category": None if is_healthy else "ml_model_error",
+                "error_message": None if is_healthy else health_info.get("message"),
+                "is_enabled": True,
+                "data_freshness": "Model artifact active",
+                "details": {
+                    "model_path": health_info.get("model_path"),
+                    "features_count": health_info.get("features_count"),
+                    "supplier_master_exists": health_info.get("supplier_master_exists"),
+                    "shipment_history_exists": health_info.get("shipment_history_exists"),
+                    "test_inference_latency_ms": health_info.get("test_inference_latency_ms"),
+                },
+            }
+        except Exception as e:
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            last_success = cls.get_last_successful_check(db, name)
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "configured",
+                "connection_status": "unhealthy",
+                "last_checked_at": datetime.now(timezone.utc),
+                "last_successful_check_at": last_success,
+                "response_time_ms": latency_ms,
+                "last_sync_at": None,
+                "error_category": "ml_service_error",
+                "error_message": _sanitize_error_message(str(e)),
+                "is_enabled": True,
+                "data_freshness": "Unavailable",
+                "details": {},
+            }
+
+    @classmethod
     async def check_all_integrations(cls, db: Session, persist: bool = True) -> List[Dict[str, Any]]:
         """Runs health checks across all known integrations and persists results."""
         tasks = []
@@ -1167,6 +1222,7 @@ class IntegrationHealthService:
             cls.check_newsdata(db),
             cls.check_storage(db),
             cls.check_smtp(db),
+            cls.check_ml_model(db),
         ])
 
         results = await asyncio.gather(*tasks)
@@ -1241,6 +1297,8 @@ class IntegrationHealthService:
             result = await cls.check_storage(db)
         elif "smtp" in target or "email" in target:
             result = await cls.check_smtp(db)
+        elif "ml" in target or "model" in target or "ai" in target or "delay" in target or "predict" in target:
+            result = await cls.check_ml_model(db)
         else:
             # Check DB integrations
             db_int = db.query(EnterpriseIntegration).filter(EnterpriseIntegration.name.ilike(f"%{integration_name}%")).first()

@@ -325,14 +325,18 @@ def _compare_stockout_days(
 # 5. BUILD THE DECISION REPORT
 # ==========================================================
 
-def generate_decision_report() -> dict:
+def generate_decision_report(
+    simulation_file: str | Path | None = None,
+    supplier_file: str | Path | None = None,
+    output_file: str | Path | None = None,
+) -> dict:
     """Generate a decision report using simulation results
     and the exact supplier selected by simulation.py.
     """
 
     # Load both generated files.
-    df = load_simulation_data()
-    selected_supplier = load_selected_supplier()
+    df = load_simulation_data(simulation_file)
+    selected_supplier = load_selected_supplier(supplier_file)
 
     # Calculate scenario summaries.
     summaries = calculate_summaries(df)
@@ -342,8 +346,8 @@ def generate_decision_report() -> dict:
 
     simulation_days = int(df["day"].max())
 
-    baseline = summaries["BASELINE"]
-    mitigated = summaries["MITIGATED"]
+    baseline = summaries.get("baseline") or summaries.get("BASELINE")
+    mitigated = summaries.get("mitigated") or summaries.get("MITIGATED")
 
     stockout_delay = findings["stockout_delay"]
     unmet_demand_change = findings["unmet_demand_change"]
@@ -360,14 +364,15 @@ def generate_decision_report() -> dict:
         "=" * 65,
         "",
         "1. SIMULATION OVERVIEW",
-        "Scenarios analyzed: BASELINE, MITIGATED",
+        "Scenarios analyzed: BASELINE, MITIGATED, AUTOMATIC REPLENISHMENT",
         f"Simulation period: {simulation_days} days",
         "",
         "2. INVENTORY COMPARISON",
     ]
 
-    for scenario_name in ("BASELINE", "MITIGATED"):
-        scenario_summary = summaries[scenario_name]
+    for scenario_key in ("baseline", "mitigated", "automatic_replenishment"):
+        scenario_summary = summaries.get(scenario_key) or summaries.get(scenario_key.upper())
+        scenario_label = SCENARIO_LABELS.get(scenario_key, scenario_key.upper())
 
         first_day = scenario_summary["first_stockout_day"]
 
@@ -379,7 +384,7 @@ def generate_decision_report() -> dict:
 
         report_lines.extend([
             "",
-            f"{scenario_name}:",
+            f"{scenario_label}:",
             (
                 "  Ending inventory: "
                 f"{scenario_summary['ending_inventory']:g} units"
@@ -492,12 +497,13 @@ def generate_decision_report() -> dict:
     # Save and print the report.
     report_text = "\n".join(report_lines)
 
-    REPORTS_DIR.mkdir(
+    target_report_file = Path(output_file) if output_file is not None else DECISION_REPORT_FILE
+    target_report_file.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    DECISION_REPORT_FILE.write_text(
+    target_report_file.write_text(
         report_text,
         encoding="utf-8",
     )
@@ -506,14 +512,14 @@ def generate_decision_report() -> dict:
 
     print(
         "\nDecision report saved to:"
-        f"\n{DECISION_REPORT_FILE}"
+        f"\n{target_report_file}"
     )
 
     return {
         "summaries": summaries,
         "selected_supplier": selected_supplier,
         "findings": findings,
-        "report_path": str(DECISION_REPORT_FILE),
+        "report_path": str(target_report_file),
     }
 
 
