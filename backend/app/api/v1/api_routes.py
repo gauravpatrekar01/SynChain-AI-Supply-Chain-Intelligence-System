@@ -13,12 +13,14 @@ from app.services.copilot.ai_service import AICopilotService
 from app.api.v1.auth import router as auth_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.ingestion import router as ingestion_router
+from app.api.v1.dashboard import router as dashboard_router
 
 router = APIRouter()
 router.include_router(test_email_router, prefix="/test", tags=["test"])
 router.include_router(auth_router, prefix="/auth", tags=["auth"])
 router.include_router(integrations_router)
 router.include_router(ingestion_router)
+router.include_router(dashboard_router)
 
 # Initialize services
 forecast_service = ForecastingService()

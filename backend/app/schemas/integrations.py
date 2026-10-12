@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, List
 import uuid
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
@@ -39,4 +39,41 @@ class IntegrationResponse(BaseModel):
 
 class ConnectionTestResponse(BaseModel):
     success: bool
-    message: str
+    message: str
+
+
+class IntegrationHealthItem(BaseModel):
+    name: str
+    category: str
+    configuration_status: Literal["configured", "not_configured"]
+    connection_status: Literal["healthy", "degraded", "unhealthy", "unknown"]
+    last_checked_at: Optional[datetime] = None
+    last_successful_check_at: Optional[datetime] = None
+    response_time_ms: float
+    last_sync_at: Optional[datetime] = None
+    error_category: Optional[str] = None
+    error_message: Optional[str] = None
+    is_enabled: bool = True
+    data_freshness: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+
+
+class AllIntegrationsHealthResponse(BaseModel):
+    overall_status: Literal["healthy", "degraded", "unhealthy"]
+    healthy_count: int
+    degraded_count: int
+    unhealthy_count: int
+    not_configured_count: int
+    total_count: int
+    timestamp: datetime
+    integrations: List[IntegrationHealthItem]
+
+
+class HealthCheckTriggerRequest(BaseModel):
+    integration_name: Optional[str] = None
+
+
+class IntegrationHealthDetailResponse(BaseModel):
+    integration: IntegrationHealthItem
+    history: List[Dict[str, Any]]
+

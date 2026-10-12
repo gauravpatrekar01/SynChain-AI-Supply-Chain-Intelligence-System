@@ -262,3 +262,15 @@ class ImportedRecord(Base):
     target_entity_id = Column(UUID(as_uuid=True), nullable=True)
     status = Column(String(50), nullable=False, default="imported")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class IntegrationHealthCheck(Base):
+    __tablename__ = "integration_health_checks"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    integration_name = Column(String(100), nullable=False, index=True)
+    category = Column(String(50), nullable=False)
+    status = Column(String(50), nullable=False)  # 'healthy', 'degraded', 'unhealthy', 'not_configured'
+    latency_ms = Column(Numeric(10, 2), nullable=False, default=0)
+    error_category = Column(String(100), nullable=True)  # 'auth_error', 'connection_error', 'timeout', 'dns_error', 'rate_limit', 'config_missing', 'server_error'
+    error_message = Column(String, nullable=True)
+    details = Column(JSONB, nullable=True)
+    checked_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

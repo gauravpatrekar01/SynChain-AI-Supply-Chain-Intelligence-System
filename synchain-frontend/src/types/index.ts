@@ -520,3 +520,127 @@ export interface ImportHistoryItem {
   completed_at?: string;
 }
 
+// --- Integration Health Monitoring ---
+export type IntegrationConnectionStatus = 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
+export type ConfigStatus = 'configured' | 'not_configured';
+
+export interface IntegrationHealthItem {
+  name: string;
+  category: string;
+  configuration_status: ConfigStatus;
+  connection_status: IntegrationConnectionStatus;
+  last_checked_at?: string;
+  last_successful_check_at?: string;
+  response_time_ms: number;
+  last_sync_at?: string;
+  error_category?: string;
+  error_message?: string;
+  is_enabled: boolean;
+  data_freshness?: string;
+  details?: Record<string, any>;
+}
+
+export interface AllIntegrationsHealthResponse {
+  overall_status: 'healthy' | 'degraded' | 'unhealthy';
+  healthy_count: number;
+  degraded_count: number;
+  unhealthy_count: number;
+  not_configured_count: number;
+  total_count: number;
+  timestamp: string;
+  integrations: IntegrationHealthItem[];
+}
+
+export interface IntegrationHealthDetailResponse {
+  integration: IntegrationHealthItem;
+  history: Array<{
+    id: string;
+    integration_name: string;
+    category: string;
+    status: IntegrationConnectionStatus;
+    latency_ms: number;
+    error_category?: string;
+    error_message?: string;
+    checked_at?: string;
+    details?: Record<string, any>;
+  }>;
+}
+
+// --- Dynamic Dashboard Intelligence ---
+export interface DashboardOverviewData {
+  globalRiskIndex: number;
+  activeDisruptions: number;
+  onTimeDeliveryRate: number;
+  totalInventoryValueUsd: number;
+  supplierHealthScore: number;
+  totalRecordsIngested: number;
+  productsCount: number;
+  suppliersCount: number;
+  warehousesCount: number;
+  inventoryUnitsTotal: number;
+  ordersCount: number;
+  activeIntegrationsHealthy: number;
+  lastUpdated: string;
+}
+
+export interface DashboardTrendsData {
+  ingestionTrend: Array<{ date: string; recordsIngested: number }>;
+  inventoryVelocity: Array<{
+    productName: string;
+    warehouseName: string;
+    stockQuantity: number;
+    safetyStockLevel: number;
+    reorderLevel: number;
+    reorderQuantity: number;
+    status: 'nominal' | 'warning' | 'critical';
+  }>;
+  demandForecast: Array<{
+    date: string;
+    actual?: number | null;
+    predicted: number;
+    confidenceUpper: number;
+    confidenceLower: number;
+  }>;
+  riskSeverityDistribution: Record<string, number>;
+}
+
+export interface DashboardRiskData {
+  id: string;
+  entityType: string;
+  entityId: string;
+  entityName: string;
+  tier?: string;
+  country?: string;
+  riskScore: number;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  category: string;
+  explanation: string;
+  contributingFactors: Array<{ feature: string; score: number }>;
+  confidenceScore: number;
+  downstreamImpact?: Record<string, any>;
+  singleSourceRisk?: boolean;
+  createdAt: string;
+}
+
+export interface DashboardAlertData {
+  id: string;
+  title: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  category: 'weather' | 'news' | 'inventory' | 'integration' | 'logistics';
+  source: string;
+  impactSummary: string;
+  timestamp: string;
+  details?: Record<string, any>;
+}
+
+export interface DashboardRecommendationData {
+  id: string;
+  action: string;
+  reason: string;
+  expectedBenefit?: string;
+  estimatedCost?: number;
+  confidence: number;
+  affectedEntities?: string[];
+  createdAt: string;
+}
+

@@ -19,6 +19,14 @@ import {
   IngestionExecuteResponse,
   ImportHistoryItem,
   CanonicalFieldMeta,
+  AllIntegrationsHealthResponse,
+  IntegrationHealthDetailResponse,
+  IntegrationHealthItem,
+  DashboardOverviewData,
+  DashboardTrendsData,
+  DashboardRiskData,
+  DashboardAlertData,
+  DashboardRecommendationData,
 } from '../types';
 import {
   mockAIHealth,
@@ -116,7 +124,54 @@ export const apiService = {
     await apiClient.post('/integrations/skip');
   },
 
-  // Dashboard Telemetry & Metrics
+  // Integration Health Monitoring
+  async getIntegrationsHealth(): Promise<AllIntegrationsHealthResponse> {
+    const res = await apiClient.get('/integrations/health');
+    return res.data;
+  },
+
+  async triggerHealthCheck(name?: string): Promise<AllIntegrationsHealthResponse> {
+    const res = await apiClient.post('/integrations/health/check', name ? { integration_name: name } : {});
+    return res.data;
+  },
+
+  async getIntegrationHealthDetail(name: string): Promise<IntegrationHealthDetailResponse> {
+    const res = await apiClient.get(`/integrations/health/${encodeURIComponent(name)}`);
+    return res.data;
+  },
+
+  // Dynamic Intelligence Dashboard API
+  async getDashboardOverview(): Promise<DashboardOverviewData> {
+    const res = await apiClient.get('/dashboard/overview');
+    return res.data;
+  },
+
+  async getDashboardTrends(): Promise<DashboardTrendsData> {
+    const res = await apiClient.get('/dashboard/trends');
+    return res.data;
+  },
+
+  async getDashboardRisks(): Promise<DashboardRiskData[]> {
+    const res = await apiClient.get('/dashboard/risks');
+    return res.data;
+  },
+
+  async getDashboardAlerts(): Promise<DashboardAlertData[]> {
+    const res = await apiClient.get('/dashboard/alerts');
+    return res.data;
+  },
+
+  async getDashboardRecommendations(): Promise<DashboardRecommendationData[]> {
+    const res = await apiClient.get('/dashboard/recommendations');
+    return res.data;
+  },
+
+  async simulateDashboardScenario(payload: any): Promise<any> {
+    const res = await apiClient.post('/dashboard/scenarios/simulate', payload);
+    return res.data;
+  },
+
+  // Dashboard Telemetry & Metrics (Legacy Fallback)
   async getDashboardData(): Promise<{
     health: AIHealthScore;
     kpis: KPIMetric[];
