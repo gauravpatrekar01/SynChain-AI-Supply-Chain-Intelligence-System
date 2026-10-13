@@ -19,42 +19,72 @@ import { LiveShipmentsView } from '../shipments/LiveShipmentsView';
 import { ReportsView } from '../reports/ReportsView';
 import { SettingsView } from '../settings/SettingsView';
 import { DataIngestionView } from '../ingestion/DataIngestionView';
+import { SupplyChainIntelligenceView } from '../intelligence/SupplyChainIntelligenceView';
+
+const PAGE_IDS = [
+  'dashboard',
+  'digital-twin',
+  'geomap',
+  'scenario-builder',
+  'simulation-results',
+  'recommendations',
+  'forecast',
+  'risk',
+  'suppliers',
+  'inventory',
+  'shipments',
+  'reports',
+  'data-sources',
+  'ingestion',
+  'intelligence',
+  'settings',
+];
 
 export const MainLayout: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<string>('dashboard');
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    const savedPage = sessionStorage.getItem('synchain_dashboard_page');
+    return savedPage && PAGE_IDS.includes(savedPage) ? savedPage : 'dashboard';
+  });
+
+  const navigateToPage = (pageId: string) => {
+    sessionStorage.setItem('synchain_dashboard_page', pageId);
+    setCurrentPage(pageId);
+  };
 
   const renderCurrentPage = () => {
     switch (currentPage) {
       case 'digital-twin':
-        return <DigitalTwinView onNavigate={setCurrentPage} />;
+        return <DigitalTwinView onNavigate={navigateToPage} />;
       case 'geomap':
-        return <GeoFleetMap onNavigate={setCurrentPage} />;
+        return <GeoFleetMap onNavigate={navigateToPage} />;
       case 'scenario-builder':
-        return <ScenarioBuilder onNavigate={setCurrentPage} />;
+        return <ScenarioBuilder onNavigate={navigateToPage} />;
       case 'simulation-results':
-        return <SimulationResultsView onNavigate={setCurrentPage} />;
+        return <SimulationResultsView onNavigate={navigateToPage} />;
       case 'recommendations':
         return <RecommendationsView />;
       case 'forecast':
         return <ForecastView />;
       case 'risk':
-        return <RiskMatrixView onNavigate={setCurrentPage} />;
+        return <RiskMatrixView onNavigate={navigateToPage} />;
       case 'suppliers':
         return <SupplierRegistryView />;
       case 'inventory':
         return <InventoryBufferView />;
       case 'shipments':
-        return <LiveShipmentsView onNavigate={setCurrentPage} />;
+        return <LiveShipmentsView onNavigate={navigateToPage} />;
       case 'reports':
         return <ReportsView />;
       case 'data-sources':
       case 'ingestion':
-        return <DataIngestionView onNavigate={setCurrentPage} />;
+        return <DataIngestionView onNavigate={navigateToPage} />;
+      case 'intelligence':
+        return <SupplyChainIntelligenceView />;
       case 'settings':
         return <SettingsView />;
       case 'dashboard':
       default:
-        return <DashboardView onNavigate={setCurrentPage} />;
+        return <DashboardView onNavigate={navigateToPage} />;
     }
   };
 
@@ -64,12 +94,12 @@ export const MainLayout: React.FC = () => {
       <NeuralBackground />
 
       {/* Collapsible Futuristic Sidebar */}
-      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
+      <Sidebar currentPage={currentPage} onNavigate={navigateToPage} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Top Navbar */}
-        <TopNavbar onNavigate={setCurrentPage} />
+        <TopNavbar onNavigate={navigateToPage} />
 
         {/* Dynamic Page View with Framer Motion Transition */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
@@ -89,10 +119,10 @@ export const MainLayout: React.FC = () => {
       </div>
 
       {/* Notification Drawer */}
-      <NotificationDrawer onNavigate={setCurrentPage} />
+      <NotificationDrawer onNavigate={navigateToPage} />
 
       {/* Command Palette (Ctrl+K) */}
-      <CommandPalette onNavigate={setCurrentPage} />
+      <CommandPalette onNavigate={navigateToPage} />
     </div>
   );
 };

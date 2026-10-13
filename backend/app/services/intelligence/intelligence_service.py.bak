@@ -1,0 +1,582 @@
+import csv
+import io
+import math
+import re
+from collections import defaultdict
+from datetime import date, datetime, timezone
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from fastapi import HTTPException, UploadFile, status
+
+from app.services.intelligence.ml_analysis import run_ml_analysis
+
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024
+
+    "supplier_master": {
+        "supplier_id": ["supplier_id", "supplierid", "vendor_id", "vendorid", "supplier_code"],
+        "supplier_name": ["supplier_name", "suppliername", "vendor_name", "vendorname", "supplier", "vendor"],
+        "location": ["location", "supplier_location"],
+        "component_types": ["component_types", "supported_components", "categories"],
+        "supplier_risk_rating": ["supplier_risk_rating", "risk_level", "risk_rating"],
+        "average_lead_time_days": ["average_lead_time_days", "avg_lead_time", "lead_time_avg"],
+        "on_time_delivery_rate": ["on_time_delivery_rate", "otd_rate", "on_time_rate"],
+        "quality_rate": ["quality_rate", "quality_score", "defect_free_rate"],
+        "unit_cost_index": ["unit_cost_index", "cost_index", "pricing_index"],
+        "available_capacity_units": ["available_capacity_units", "capacity", "stock_capacity"],
+        "distance_from_warehouse_km": ["distance_from_warehouse_km", "distance_km", "warehouse_distance"],
+        "active": ["active", "status", "is_active"],
+    },
+}ATASET_FIELD_ALIASES: Dict[str, Dict[str, List[str]]] = {
+    "erp": {
+        "supplier_id": ["supplier_id", "supplierid", "supplier", "vendor_id", "vendorid", "supplier_code", "vendor_code"],
+        "supplier_name": ["supplier_name", "suppliername", "vendor_name", "vendorname", "supplier", "vendor"],
+        "product_id": ["product_id", "productid", "sku", "item_code", "itemcode", "product_code", "productcode"],
+        "order_id": ["order_id", "orderid", "po_number", "ponumber", "purchase_order", "sales_order"],
+        "lead_time_days": ["lead_time_days", "leadtimedays", "lead_time", "leadtime", "supplier_lead_time_days"],
+        "unit_cost": ["unit_cost", "unitcost", "cost_per_unit", "purchase_price", "unit_price", "price"],
+        "order_quantity": ["order_quantity", "orderqty", "qty", "quantity", "ordered_qty", "order_qty"],
+        "supplier_location": ["supplier_location"],
+        "component_type": ["component_type"],
+        "transport_mode": ["transport_mode"],
+        "distance_km": ["distance_km"],
+        "weather_condition": ["weather_condition"],
+        "seasonal_rainy_period": ["seasonal_rainy_period"],
+        "traffic_level": ["traffic_level"],
+        "supplier_risk_rating": ["supplier_risk_rating"],
+        "supplier_on_time_rate": ["supplier_on_time_rate"],
+        "supplier_quality_rate": ["supplier_quality_rate"],
+        "supplier_capacity_utilization": ["supplier_capacity_utilization"],
+        "inventory_at_order": ["inventory_at_order"],
+        "planned_lead_time_days": ["planned_lead_time_days"],
+        "risk_description": ["risk_description"],
+        "disruption_report": ["disruption_report"],
+        "incident_description": ["incident_description"],
+        "location": ["location"],
+        "component_types": ["component_types"],
+        "average_lead_time_days": ["average_lead_time_days"],
+        "on_time_delivery_rate": ["on_time_delivery_rate"],
+        "quality_rate": ["quality_rate"],
+        "unit_cost_index": ["unit_cost_index"],
+        "available_capacity_units": ["available_capacity_units"],
+        "distance_from_warehouse_km": ["distance_from_warehouse_km"],
+        "active": ["active"],
+    },
+    "wms": {
+        "warehouse_id": ["warehouse_id", "warehouseid", "wh_id", "warehouse_code", "facility_id"],
+        "product_id": ["product_id", "productid", "sku", "item_code", "itemcode", "item_id"],
+        "current_stock": ["current_stock", "currentstock", "stock_on_hand", "on_hand", "inventory_on_hand", "stock"],
+        "reorder_level": ["reorder_level", "reorderlevel", "safety_stock", "min_stock_level"],
+        "daily_demand": ["daily_demand", "dailydemand", "avg_daily_demand", "demand_per_day", "demand"],
+        "observation_date": ["observation_date", "date", "timestamp"],
+        "scenario_horizon_days": ["scenario_horizon_days"],
+        "simulation_shipment_quantity": ["simulation_shipment_quantity"],
+        "baseline_lead_time_days": ["baseline_lead_time_days"],
+        "mitigated_lead_time_days": ["mitigated_lead_time_days"],
+        "risk_description": ["risk_description"],
+        "disruption_report": ["disruption_report"],
+        "incident_description": ["incident_description"],
+    },
+    "csr": {
+        "supplier_id": ["supplier_id", "supplierid", "vendor_id", "vendorid", "supplier_code"],
+        "supplier_name": ["supplier_name", "suppliername", "vendor_name", "vendorname", "supplier", "vendor"],
+        "emissions_score": ["emissions_score", "emissionsscore", "carbon_score", "co2_score", "emission_index"],
+        "compliance_score": ["compliance_score", "compliancescore", "audit_score", "supplier_compliance"],
+        "risk_description": ["risk_description"],
+        "disruption_report": ["disruption_report"],
+        "incident_description": ["incident_description"],
+    },
+}
+
+    "supplier_master": {
+        "required_groups": [
+            ["supplier_id", "supplier_name"],
+            ["location", "component_types"],
+            ["average_lead_time_days", "on_time_delivery_rate", "quality_rate"],
+            ["unit_cost_index", "available_capacity_units"],
+            ["distance_from_warehouse_km", "active"],
+            ["supplier_risk_rating"],
+        ],
+        "numeric_fields": [
+            "average_lead_time_days",
+            "on_time_delivery_rate",
+            "quality_rate",
+            "unit_cost_index",
+            "available_capacity_units",
+            "distance_from_warehouse_km",
+            "active",
+        ],
+    },
+}ATASET_RULES: Dict[str, Dict[str, List[List[str]]]] = {
+    "erp": {
+        "required_groups": [
+            ["supplier_id", "supplier_name"],
+            ["product_id", "order_id"],
+            ["lead_time_days", "order_quantity",, "unit_cost"],
+        ],
+        "numeric_fields": [
+            "lead_time_days",
+            "order_quantity",
+            "unit_cost",
+            "distance_km",
+            "seasonal_rainy_period",
+            "supplier_on_time_rate",
+            "supplier_quality_rate",
+            "supplier_capacity_utilization",
+            "inventory_at_order",
+            "planned_lead_time_days",
+            "average_lead_time_days",
+            "on_time_delivery_rate",
+            "quality_rate",
+            "unit_cost_index",
+            "available_capacity_units",
+            "distance_from_warehouse_km",
+            "active",
+        ],
+    },
+    "wms": {
+        "required_groups": [
+            ["warehouse_id"],
+            ["product_id"],
+            ["current_stock"],
+            ["daily_demand"],
+        ],
+        "numeric_fields": [
+            "current_stock",
+            "reorder_level",
+            "daily_demand",
+            "scenario_horizon_days",
+            "simulation_shipment_quantity",
+            "baseline_lead_time_days",
+            "mitigated_lead_time_days",
+        ],
+    },
+    "csr": {
+        "required_groups": [
+            ["supplier_id", "supplier_name"],
+            ["emissions_score"],
+            ["compliance_score"],
+        ],
+        "numeric_fields": ["emissions_score", "compliance_score"],
+    },
+}
+
+USER_DATASTORE: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
+
+def _normalize_header(raw_header: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(raw_header).strip().lower()).strip("_")
+
+def _clean_cell(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+    return value
+
+def _field_alias_lookup(dataset_type: str) -> Dict[str, str]:
+    alias_map: Dict[str, str] = {}
+    for canonical, aliases in DATASET_FIELD_ALIASES.get(dataset_type, {}).items():
+        for alias in aliases:
+            alias_map[_normalize_header(alias)] = canonical
+    return alias_map
+
+def _resolve_headers(headers: Iterable[str], dataset_type: str) -> Dict[str, str]:
+    alias_map = _field_alias_lookup(dataset_type)
+    resolved: Dict[str, str] = {}
+    for header in headers:
+        normalized = _normalize_header(header)
+        canonical = alias_map.get(normalized)
+        if canonical:
+            resolved[canonical] = str(header)
+    return resolved
+
+def _coerce_numeric(value: Any) -> float:
+    if value is None or value == "":
+        raise ValueError("missing_value")
+    if isinstance(value, (int, float)):
+        return float(value)
+    cleaned = str(value).strip().replace("%", "").replace(",", "")
+    if cleaned in {"", "N/A", "NA", "null", "none"}:
+        raise ValueError("missing_value")
+    try:
+        number = float(cleaned)
+    except ValueError as exc:  # pragma: no cover - exercised via API validation
+        raise ValueError(f"Invalid numeric value: {value}") from exc
+    if not math.isfinite(number):
+        raise ValueError("Numeric values must be finite.")
+    if number < 0:
+        raise ValueError("Numeric values must not be negative.")
+    return number
+
+def _determine_markers(dataset_rows: List[Dict[str, Any]], dataset_type: str) -> List[str]:
+    markers: List[str] = []
+    for row in dataset_rows:
+        if dataset_type == "erp":
+            lead_time = row.get("lead_time_days")
+            quantity = row.get("order_quantity")
+            if lead_time is not None and quantity is not None and lead_time > 0 and quantity > 0:
+                markers.append(f"Lead time {lead_time} days for order volume {quantity}")
+        elif dataset_type == "wms":
+            current_stock = row.get("current_stock")
+            daily_demand = row.get("daily_demand")
+            if current_stock is not None and daily_demand not in (None, 0):
+                coverage = current_stock / daily_demand
+                markers.append(f"Coverage ratio {coverage:.2f}x for stock {current_stock} vs demand {daily_demand}")
+        elif dataset_type == "csr":
+            compliance = row.get("compliance_score")
+            emissions = row.get("emissions_score")
+            if compliance is not None:
+                markers.append(f"Compliance score {compliance}")
+            if emissions is not None:
+                markers.append(f"Emissions score {emissions}")
+    return markers[:5]
+
+class IntelligenceService:
+    @staticmethod
+    def upload_dataset(user_id: str, dataset_type: str, file: UploadFile) -> Dict[str, Any]:
+        normalized_type = dataset_type.lower().strip()
+        if normalized_type not in DATASET_RULES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unsupported dataset type '{dataset_type}'. Allowed values: {', '.join(DATASET_RULES.keys())}.",
+            )
+
+        if not file.filename:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No filename provided for upload.")
+
+        extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+        if extension != "csv":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .csv files are supported for supply-chain intelligence uploads.")
+
+        content = file.file.read(MAX_UPLOAD_BYTES + 1)
+        if len(content) == 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded CSV file is empty.")
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"The uploaded CSV exceeds the {MAX_UPLOAD_BYTES / (1024 * 1024):.0f}MB limit.",
+            )
+
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The CSV file must be UTF-8 encoded.") from exc
+
+        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
+        try:
+            fieldnames = reader.fieldnames
+        except csv.Error as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Malformed CSV header.") from exc
+
+        if not fieldnames:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded CSV does not contain a valid header row.")
+
+        normalized_columns = [str(name).strip() for name in fieldnames if str(name).strip()]
+        if not normalized_columns:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded CSV does not contain any usable columns.")
+        normalized_header_names = [_normalize_header(name) for name in normalized_columns]
+        if len(normalized_header_names) != len(set(normalized_header_names)):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded CSV contains duplicate column names.")
+
+        resolved_headers = _resolve_headers(normalized_columns, normalized_type)
+        required_groups = DATASET_RULES[normalized_type]["required_groups"]
+        missing_columns: List[str] = []
+        for group in required_groups:
+            if not any(field in resolved_headers for field in group):
+                missing_columns.extend(group)
+
+        if missing_columns:
+            unique_missing = list(dict.fromkeys(missing_columns))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{normalized_type.upper()} CSV is missing required columns: {', '.join(unique_missing)}.",
+            )
+
+        rows: List[Dict[str, Any]] = []
+        invalid_numeric: List[str] = []
+        alias_lookup = _field_alias_lookup(normalized_type)
+        try:
+            for row_number, raw_row in enumerate(reader, start=1):
+                if None in raw_row or any(value is None for value in raw_row.values()):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Malformed CSV row {row_number}: the number of values does not match the header.",
+                    )
+
+                row: Dict[str, Any] = {}
+                for key, value in raw_row.items():
+                    normalized_key = _normalize_header(key)
+                    canonical = alias_lookup.get(normalized_key)
+                    if canonical:
+                        row[canonical] = _clean_cell(value)
+                observation_date = row.get("observation_date")
+                if observation_date is not None:
+                    try:
+                        row["observation_date"] = date.fromisoformat(str(observation_date)).isoformat()
+                    except ValueError as exc:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"CSV row {row_number} has an invalid observation_date; use YYYY-MM-DD.",
+                        ) from exc
+                if not row or not any(value is not None for value in row.values()):
+                    continue
+
+                for group in required_groups:
+                    if not any(row.get(field) is not None for field in group):
+                        expected = " or ".join(group)
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"CSV row {row_number} is missing a required value: provide at least one of {expected}.",
+                        )
+                rows.append(row)
+        except csv.Error as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Malformed CSV content. Check that fields are properly quoted and each row matches the header.",
+            ) from exc
+
+        if not rows:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded CSV contains no actionable rows.")
+
+        for field in DATASET_RULES[normalized_type]["numeric_fields"]:
+            for index, row in enumerate(rows, start=1):
+                if field not in row or row.get(field) in (None, ""):
+                    continue
+                try:
+                    rows[index - 1][field] = _coerce_numeric(row[field])
+                except ValueError:
+                    invalid_numeric.append(f"Row {index}: '{field}' must be a finite, non-negative number.")
+
+        if invalid_numeric:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="; ".join(invalid_numeric[:3]),
+            )
+
+        for index, row in enumerate(rows, start=1):
+            for field in (
+                "supplier_on_time_rate",
+                "supplier_quality_rate",
+                "supplier_capacity_utilization",
+                "on_time_delivery_rate",
+                "quality_rate",
+            ):
+                value = row.get(field)
+                if value is not None and value > 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Row {index}: '{field}' must be between 0 and 1.",
+                    )
+            for field in ("seasonal_rainy_period", "active"):
+                value = row.get(field)
+                if value is not None and value not in (0, 1):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Row {index}: '{field}' must be 0 or 1.",
+                    )
+            for field in ("risk_description", "disruption_report", "incident_description"):
+                value = row.get(field)
+                if value is not None and len(str(value)) > 2000:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Row {index}: '{field}' must not exceed 2000 characters.",
+                    )
+
+        user_store = USER_DATASTORE[str(user_id)]
+        user_store.pop("_analysis_result", None)
+        user_store[normalized_type] = {
+            "dataset_type": normalized_type,
+            "filename": file.filename,
+            "rows": rows,
+            "columns": sorted(resolved_headers.keys()),
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "status": "ready",
+            "markers": _determine_markers(rows, normalized_type),
+        }
+
+        return {
+            "success": True,
+            "dataset_type": normalized_type,
+            "file_name": file.filename,
+            "record_count": len(rows),
+            "columns_detected": sorted(resolved_headers.keys()),
+            "missing_columns": [],
+            "message": f"{normalized_type.upper()} dataset uploaded successfully.",
+        }
+
+    @staticmethod
+    def analyze_for_user(user_id: str) -> Dict[str, Any]:
+        store = USER_DATASTORE.get(str(user_id), {})
+        available = {dataset_name: dataset for dataset_name, dataset in store.items() if dataset.get("status") == "ready"}
+
+        if not available:
+            return {
+                "analysis_status": "not_ready",
+                "available_datasets": [],
+                "message": "Upload ERP, WMS, and/or CSR CSV files before running supply-chain analysis.",
+                "dataset_status": {},
+                "summary": {"total_risks": 0, "dataset_quality": "not_ready"},
+                "risks": [],
+                "recommendations": [],
+                "limitations": ["No datasets were uploaded for analysis."],
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "ml_analysis": run_ml_analysis({}),
+            }
+
+        results: List[Dict[str, Any]] = []
+        recommendations: List[str] = []
+        limitations: List[str] = []
+
+        for dataset_type, dataset in available.items():
+            rows = dataset.get("rows", [])
+            dataset_status = {
+                "status": "ready",
+                "rows": len(rows),
+                "columns": dataset.get("columns", []),
+                "filename": dataset.get("filename"),
+            }
+
+            if dataset_type == "erp":
+                for row in rows:
+                    lead_time = row.get("lead_time_days")
+                    order_quantity = row.get("order_quantity")
+                    if lead_time is not None and lead_time > 21:
+                        results.append({
+                            "id": f"erp-lead-time-{len(results) + 1}",
+                            "dataset": "erp",
+                            "title": "Supplier lead-time risk",
+                            "severity": "medium" if lead_time <= 30 else "high",
+                            "evidence": [f"Supplier lead time is {lead_time} days for order quantity {order_quantity or 'unknown'}."] ,
+                            "recommendation": "Review replenishment timing and consider dual-sourcing or expedited orders for this supplier.",
+                            "operational_impact": "Potential delays may extend replenishment windows and threaten downstream production continuity.",
+                            "supporting_records": [row.get("supplier_name") or row.get("supplier_id") or "ERP record"],
+                        })
+                        recommendations.append("Review supplier lead times and adjust safety stock or alternate sourcing plans.")
+
+            if dataset_type == "wms":
+                for row in rows:
+                    stock = row.get("current_stock")
+                    demand = row.get("daily_demand")
+                    reorder = row.get("reorder_level")
+                    if stock is None or demand in (None, 0):
+                        continue
+                    coverage = stock / demand
+                    if coverage < 1.0 or (reorder is not None and stock <= reorder):
+                        severity = "high" if coverage < 0.5 else "medium"
+                        results.append({
+                            "id": f"wms-coverage-{len(results) + 1}",
+                            "dataset": "wms",
+                            "title": "Inventory coverage below replenishment threshold",
+                            "severity": severity,
+                            "evidence": [f"Current stock {stock} vs. daily demand {demand} provides coverage of {coverage:.2f} days."] + ([f"Stock is at or below reorder level {reorder}."] if reorder is not None else []),
+                            "recommendation": "Increase safety stock or expedite replenishment for this SKU and warehouse pairing.",
+                            "operational_impact": "A short-term stockout is possible before the next replenishment cycle arrives.",
+                            "supporting_records": [row.get("product_id") or "WMS record"],
+                        })
+                        recommendations.append("Rebalance inventory for low-coverage SKUs and review order triggers around demand spikes.")
+
+            if dataset_type == "csr":
+                limitations.append(
+                    "No documented CSR threshold configuration was supplied. Score thresholds are treated conservatively and should be validated with the business owner before making supplier decisions."
+                )
+                for row in rows:
+                    compliance = row.get("compliance_score")
+                    emissions = row.get("emissions_score")
+                    if compliance is not None and compliance < 70:
+                        results.append({
+                            "id": f"csr-compliance-{len(results) + 1}",
+                            "dataset": "csr",
+                            "title": "Supplier compliance score is below the expected range",
+                            "severity": "high" if compliance < 50 else "medium",
+                            "evidence": [f"Compliance score is {compliance} for supplier {row.get('supplier_name') or row.get('supplier_id') or 'unknown'}."] ,
+                            "recommendation": "Audit the supplier's compliance documentation and prioritize follow-up or corrective action plans.",
+                            "operational_impact": "Supplier performance or audit readiness issues may increase regulatory and delivery risk.",
+                            "supporting_records": [row.get("supplier_name") or row.get("supplier_id") or "CSR record"],
+                        })
+                        recommendations.append("Initiate corrective actions for low-compliance suppliers and review sourcing alternatives where necessary.")
+                    if emissions is not None and emissions < 50:
+                        results.append({
+                            "id": f"csr-emissions-{len(results) + 1}",
+                            "dataset": "csr",
+                            "title": "Emissions performance is materially below target",
+                            "severity": "medium",
+                            "evidence": [f"Emissions score is {emissions}, which suggests elevated environmental performance risk."] ,
+                            "recommendation": "Review supplier sustainability initiatives and consider approved emissions mitigation measures.",
+                            "operational_impact": "Operational choices may become constrained by ESG obligations or customer commitments.",
+                            "supporting_records": [row.get("supplier_name") or row.get("supplier_id") or "CSR record"],
+                        })
+                        recommendations.append("Assess supplier sustainability performance and plan emissions-remediation actions for at-risk partners.")
+
+        deduped_results: List[Dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for risk in results:
+            risk_id = risk["id"]
+            if risk_id in seen_ids:
+                continue
+            seen_ids.add(risk_id)
+            deduped_results.append(risk)
+
+        deduped_recommendations = list(dict.fromkeys(recommendations))
+
+        summary = {
+            "total_risks": len(deduped_results),
+            "dataset_count": len(available),
+            "dataset_quality": "limited" if limitations else "good",
+            "high_risk_count": sum(1 for risk in deduped_results if risk.get("severity") == "high"),
+            "medium_risk_count": sum(1 for risk in deduped_results if risk.get("severity") == "medium"),
+        }
+
+        result = {
+            "analysis_status": "ready" if deduped_results else "limited",
+            "available_datasets": sorted(available.keys()),
+            "dataset_status": {
+                dataset_name: {
+                    "status": "ready",
+                    "rows": len(dataset.get("rows", [])),
+                    "columns": dataset.get("columns", []),
+                    "filename": dataset.get("filename"),
+                }
+                for dataset_name, dataset in available.items()
+            },
+            "summary": summary,
+            "risks": deduped_results,
+            "recommendations": deduped_recommendations,
+            "limitations": list(dict.fromkeys(limitations)),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "ml_analysis": run_ml_analysis(available),
+        }
+        store["_analysis_result"] = result
+        return result
+
+    @staticmethod
+    def get_results_for_user(user_id: str) -> Optional[Dict[str, Any]]:
+        user_store = USER_DATASTORE.get(str(user_id), {})
+        if not user_store:
+            return None
+        cached_result = user_store.get("_analysis_result")
+        if cached_result is not None:
+            return cached_result
+        available = {
+            dataset_name: dataset
+            for dataset_name, dataset in user_store.items()
+            if dataset_name in DATASET_RULES and dataset.get("status") == "ready"
+        }
+        return {
+            "analysis_status": "not_ready",
+            "available_datasets": sorted(available),
+            "dataset_status": {
+                dataset_name: {
+                    "status": "ready",
+                    "rows": len(dataset.get("rows", [])),
+                    "columns": dataset.get("columns", []),
+                    "filename": dataset.get("filename"),
+                }
+                for dataset_name, dataset in available.items()
+            },
+            "message": "Analysis has not been run for these uploaded datasets yet.",
+            "summary": {"total_risks": 0, "dataset_quality": "not_ready"},
+            "risks": [],
+            "recommendations": [],
+            "limitations": ["Run Analyze to produce rule-based findings and available model results."],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }

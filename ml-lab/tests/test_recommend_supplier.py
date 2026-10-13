@@ -83,6 +83,69 @@ def test_recommend_suppliers_handles_empty_supplier_data(monkeypatch, sample_shi
     assert recommend_supplier.recommend_suppliers(sample_shipment) == []
 
 
+def test_recommend_suppliers_can_use_only_explicit_uploaded_profiles(sample_shipment):
+    profile = {
+        "supplier_id": "REAL-1",
+        "supplier_name": "Uploaded Partner",
+        "location": "Pune",
+        "component_types": "Battery",
+        "supplier_risk_rating": "Low",
+        "average_lead_time_days": 4,
+        "on_time_delivery_rate": 0.92,
+        "quality_rate": 0.95,
+        "unit_cost_index": 100,
+        "available_capacity_units": 1000,
+        "distance_from_warehouse_km": 250,
+        "active": 1,
+    }
+    inactive = {**profile, "supplier_id": "REAL-2", "active": 0}
+    over_capacity = {
+        **profile,
+        "supplier_id": "REAL-3",
+        "available_capacity_units": 10,
+    }
+    results = recommend_supplier.recommend_suppliers(
+        sample_shipment,
+        supplier_records=[profile, inactive, over_capacity],
+        predictor=lambda _: {
+            "delay_probability": 0.2,
+            "data_source": "synthetic_development_data",
+        },
+    )
+
+    assert [item["supplier_id"] for item in results] == ["REAL-1"]
+    assert results[0]["supplier_source"] == "uploaded_user_data"
+    assert results[0]["ranking_factors"] == {
+        "estimated_delay_probability": 0.40,
+        "average_lead_time_days": 0.25,
+        "quality_rate": 0.20,
+        "unit_cost_index": 0.15,
+    }
+
+
+def test_uploaded_supplier_recommendation_requires_explicit_risk_rating(sample_shipment):
+    profile = {
+        "supplier_id": "REAL-1",
+        "supplier_name": "Uploaded Partner",
+        "location": "Pune",
+        "component_types": "Battery",
+        "average_lead_time_days": 4,
+        "on_time_delivery_rate": 0.92,
+        "quality_rate": 0.95,
+        "unit_cost_index": 100,
+        "available_capacity_units": 1000,
+        "distance_from_warehouse_km": 250,
+        "active": 1,
+    }
+
+    with pytest.raises(ValueError, match="explicit supplier_risk_rating"):
+        recommend_supplier.recommend_suppliers(
+            sample_shipment,
+            supplier_records=[profile],
+            predictor=lambda _: {"delay_probability": 0.2},
+        )
+
+
 def test_recommend_suppliers_surfaces_prediction_failure(monkeypatch, sample_shipment):
     def raise_error(_):
         raise ValueError("bad model input")

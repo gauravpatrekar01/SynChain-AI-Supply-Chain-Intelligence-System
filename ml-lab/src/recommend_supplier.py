@@ -123,6 +123,9 @@ def supports_component(
 def recommend_suppliers(
     shipment: dict,
     max_results: int = 5,
+    *,
+    supplier_records: list[dict] | None = None,
+    predictor=None,
 ) -> list[dict]:
     if max_results < 1:
         raise ValueError("max_results must be at least 1.")
@@ -131,9 +134,33 @@ def recommend_suppliers(
     component_type = shipment["component_type"]
     order_quantity = int(shipment["order_quantity"])
 
-    suppliers = load_suppliers()
+    suppliers = (
+        pd.DataFrame(supplier_records)
+        if supplier_records is not None
+        else load_suppliers()
+    )
     if suppliers.empty:
         return []
+
+    if supplier_records is not None and (
+        "supplier_risk_rating" not in suppliers.columns
+        or any(
+            not isinstance(value, str) or not value.strip()
+            for value in suppliers["supplier_risk_rating"]
+        )
+    ):
+        raise ValueError(
+            "Uploaded supplier records require an explicit supplier_risk_rating."
+        )
+
+    missing_columns = sorted(
+        REQUIRED_SUPPLIER_COLUMNS - set(suppliers.columns)
+    )
+    if missing_columns:
+        raise ValueError(
+            "Supplier dataset is missing required columns: "
+            + ", ".join(missing_columns)
+        )
 
     eligible = suppliers[
         (pd.to_numeric(suppliers["active"], errors="coerce").fillna(0) == 1)
@@ -158,6 +185,7 @@ def recommend_suppliers(
         return []
 
     recommendations = []
+    predict = predictor or predict_shipment
 
     for _, supplier in eligible.iterrows():
         candidate = shipment.copy()
@@ -168,13 +196,16 @@ def recommend_suppliers(
         candidate["supplier_quality_rate"] = float(
             supplier.get("quality_rate", 0.0)
         )
-        candidate["supplier_risk_rating"] = (
-            "Low"
-            if candidate["supplier_on_time_rate"] >= 0.90
-            else "Medium"
-            if candidate["supplier_on_time_rate"] >= 0.80
-            else "High"
-        )
+        if supplier_records is None:
+            candidate["supplier_risk_rating"] = (
+                "Low"
+                if candidate["supplier_on_time_rate"] >= 0.90
+                else "Medium"
+                if candidate["supplier_on_time_rate"] >= 0.80
+                else "High"
+            )
+        else:
+            candidate["supplier_risk_rating"] = supplier["supplier_risk_rating"]
 
         capacity = pd.to_numeric(
             supplier.get("available_capacity_units", 0),
@@ -189,7 +220,7 @@ def recommend_suppliers(
         )
 
         try:
-            prediction = predict_shipment(candidate)
+            prediction = predict(candidate)
         except Exception as exc:
             raise RuntimeError(
                 "Unable to estimate delay risk for supplier "
@@ -223,6 +254,17 @@ def recommend_suppliers(
                     "data_source",
                     "synthetic_development_data",
                 ),
+                "supplier_source": (
+                    "uploaded_user_data"
+                    if supplier_records is not None
+                    else "synthetic_demo_data"
+                ),
+                "ranking_factors": {
+                    "estimated_delay_probability": 0.40,
+                    "average_lead_time_days": 0.25,
+                    "quality_rate": 0.20,
+                    "unit_cost_index": 0.15,
+                },
             }
         )
 

@@ -1,0 +1,2 @@
+warehouse_id,product_id,current_stock,reorder_level,daily_demand,observation_date,scenario_horizon_days,simulation_shipment_quantity,baseline_lead_time_days,mitigated_lead_time_days
+W1,P1,100,200,50,2026-10-01,30,1000,25,15

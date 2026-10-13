@@ -1,0 +1,5 @@
+# Optional CPU inference dependencies; keep them out of the base API environment.
+# Versions are compatible with Python 3.14 and chronos-forecasting 2.3.2.
+torch==2.14.1
+transformers==5.19.0
+chronos-forecasting==2.3.2

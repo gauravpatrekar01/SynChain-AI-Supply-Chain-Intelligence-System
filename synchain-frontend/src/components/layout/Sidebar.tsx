@@ -71,6 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       title: 'Enterprise Management',
       items: [
         { id: 'data-sources', label: 'Data Ingestion Hub', icon: UploadCloud, badge: 'CSV / Excel', badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40' },
+        { id: 'intelligence', label: 'Supply Chain Intelligence', icon: ShieldAlert, badge: 'Risk', badgeColor: 'bg-violet-500/20 text-violet-300 border-violet-400/40' },
         { id: 'reports', label: 'Reports & Exports', icon: FileText },
         { id: 'settings', label: 'System Settings', icon: Settings },
       ],

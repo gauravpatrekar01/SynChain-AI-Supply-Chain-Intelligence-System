@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { Network, Lock, Mail, Loader2, ArrowRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -16,10 +17,23 @@ export const LoginForm: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
-      const user = await login(email, password);
-      navigate(user.onboarding_completed ? '/' : '/onboarding');
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Invalid email or password');
+      await login(email, password);
+      navigate('/dashboard');
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const detail = err.response?.data?.detail;
+        if (typeof detail === 'string') {
+          setError(detail);
+        } else if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+          setError('The server took too long to respond. Please try again.');
+        } else if (!err.response) {
+          setError('Unable to connect to the server. Check that the backend is running and try again.');
+        } else {
+          setError('Login failed. Please try again.');
+        }
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

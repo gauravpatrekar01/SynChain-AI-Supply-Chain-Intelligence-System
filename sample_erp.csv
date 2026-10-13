@@ -1,0 +1,3 @@
+supplier_id,supplier_name,product_id,order_id,lead_time_days,unit_cost,order_quantity,supplier_location,component_type,transport_mode,distance_km,weather_condition,seasonal_rainy_period,traffic_level,supplier_risk_rating,supplier_on_time_rate,supplier_quality_rate,supplier_capacity_utilization,inventory_at_order,planned_lead_time_days,unit_cost_index,available_capacity_units,distance_from_warehouse_km,active
+S1,Supplier A,P1,O1,25,100,500,Pune,Battery,Road,450,Rain,1,High,Medium,0.85,0.9,0.8,200,5,1.0,1000,100,1
+S2,Supplier B,P1,O2,15,110,500,Mumbai,Battery,Road,150,Clear,0,Low,Low,0.95,0.98,0.7,150,4,1.1,800,50,1

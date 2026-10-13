@@ -1,9 +1,8 @@
 import json
+import math
 from pathlib import Path
 
 import pandas as pd
-
-from recommend_supplier import recommend_suppliers
 
 
 # ============================================================
@@ -24,9 +23,12 @@ def _coerce_int(name: str, value: object, *, minimum: int | None = None) -> int:
 
     try:
         coerced = int(value)
-    except (TypeError, ValueError) as exc:
+        numeric_value = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
         raise TypeError(f"{name} must be an integer value.") from exc
 
+    if not math.isfinite(numeric_value) or numeric_value != coerced:
+        raise ValueError(f"{name} must be a finite whole number.")
     if minimum is not None and coerced < minimum:
         raise ValueError(f"{name} must be >= {minimum}.")
 
@@ -212,6 +214,78 @@ def simulate_scenario(
     return pd.DataFrame(records)
 
 
+def run_explicit_scenario_simulation(
+    *,
+    initial_inventory: int,
+    daily_demand: int,
+    simulation_days: int,
+    shipment_quantity: int,
+    baseline_lead_time_days: int,
+    mitigated_lead_time_days: int,
+) -> dict:
+    """Compare explicit lead-time assumptions without selecting a supplier or writing reports."""
+    validated = validate_simulation_inputs(
+        initial_inventory=initial_inventory,
+        daily_demand=daily_demand,
+        simulation_days=simulation_days,
+        shipment_quantity=shipment_quantity,
+        supplier_lead_time=baseline_lead_time_days,
+    )
+    baseline_lead_time_days = validated["supplier_lead_time"]
+    mitigated_lead_time_days = _coerce_int(
+        "mitigated_lead_time_days",
+        mitigated_lead_time_days,
+        minimum=0,
+    )
+    if validated["daily_demand"] <= 0:
+        raise ValueError("daily_demand must be greater than zero.")
+    if validated["shipment_quantity"] <= 0:
+        raise ValueError("shipment_quantity must be positive.")
+
+    scenarios = {}
+    for name, lead_time in (
+        ("baseline", baseline_lead_time_days),
+        ("mitigation_assumption", mitigated_lead_time_days),
+    ):
+        daily_results = simulate_scenario(
+            scenario_name=name,
+            initial_inventory=validated["initial_inventory"],
+            daily_demand=validated["daily_demand"],
+            simulation_days=validated["simulation_days"],
+            supplier_lead_time=lead_time,
+            shipment_quantity=validated["shipment_quantity"],
+        ).to_dict(orient="records")
+        stockout_days = [
+            record["day"] for record in daily_results if record["unmet_demand"] > 0
+        ]
+        scenarios[name] = {
+            "daily_results": daily_results,
+            "summary": {
+                "ending_inventory": int(daily_results[-1]["ending_inventory"]),
+                "total_unmet_demand": int(sum(row["unmet_demand"] for row in daily_results)),
+                "days_with_stockout": len(stockout_days),
+                "first_stockout_day": stockout_days[0] if stockout_days else None,
+            },
+        }
+
+    return {
+        "scenarios": scenarios,
+        "assumptions": {
+            "initial_inventory": validated["initial_inventory"],
+            "daily_demand": validated["daily_demand"],
+            "simulation_days": validated["simulation_days"],
+            "shipment_quantity": validated["shipment_quantity"],
+            "baseline_lead_time_days": baseline_lead_time_days,
+            "mitigated_lead_time_days": mitigated_lead_time_days,
+            "shipment_day": 1,
+            "mitigation_is_a_user_supplied_assumption": True,
+        },
+        "limitations": [
+            "The mitigation lead time is a user-supplied scenario assumption, not evidence of a replacement supplier or an authorized sourcing change."
+        ],
+    }
+
+
 # ============================================================
 # 2. BASELINE VS. ALTERNATIVE SUPPLIER SIMULATION
 # ============================================================
@@ -258,6 +332,8 @@ def run_simulation(
     # --------------------------------------------------------
     # C. Select the best alternative supplier
     # --------------------------------------------------------
+
+    from recommend_supplier import recommend_suppliers
 
     recommendations = recommend_suppliers(
         shipment,

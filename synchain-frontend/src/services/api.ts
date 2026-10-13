@@ -42,6 +42,94 @@ import {
   mockUserProfiles,
 } from './mockData';
 
+export type IntelligenceDatasetType = 'erp' | 'wms' | 'csr';
+
+export interface IntelligenceDatasetStatus {
+  status: string;
+  rows: number;
+  columns: string[];
+  filename: string;
+}
+
+export interface IntelligenceRiskFinding {
+  id: string;
+  dataset: IntelligenceDatasetType;
+  title: string;
+  severity: 'low' | 'medium' | 'high';
+  evidence: string[];
+  recommendation: string;
+  operational_impact: string;
+  supporting_records?: string[];
+}
+
+export type IntelligenceModelStatus =
+  | 'completed'
+  | 'skipped_insufficient_data'
+  | 'unavailable'
+  | 'failed';
+
+export interface IntelligenceModelResult {
+  status: IntelligenceModelStatus;
+  message: string;
+  predictions?: Array<Record<string, string | number | boolean>>;
+  forecasts?: Array<{
+    warehouse_id: string;
+    product_id: string;
+    frequency: string;
+    history_observations: number;
+    forecast: Array<{
+      date: string;
+      lower_80: number;
+      median: number;
+      upper_80: number;
+    }>;
+  }>;
+  recommendations?: Array<Record<string, string | number | boolean | Record<string, number>>>;
+  scenarios?: Record<string, {
+    summary?: Record<string, number | null>;
+    daily_results?: Array<Record<string, number | string>>;
+  }>;
+  missing_features?: string[];
+  missing_fields?: string[];
+  skipped_series?: string[];
+  truncated_document_count?: number;
+  ranking_factors?: Record<string, number>;
+  assumptions?: Record<string, string | number | boolean>;
+  limitations?: string[];
+  provenance?: Record<string, string | number | boolean | string[]>;
+}
+
+export type IntelligenceModelResults = Record<string, IntelligenceModelResult>;
+
+export interface IntelligenceAnalysisResult {
+  analysis_status: 'ready' | 'limited' | 'not_ready';
+  available_datasets: IntelligenceDatasetType[];
+  dataset_status?: Partial<Record<IntelligenceDatasetType, IntelligenceDatasetStatus>>;
+  summary: {
+    total_risks: number;
+    dataset_quality: string;
+    dataset_count?: number;
+    high_risk_count?: number;
+    medium_risk_count?: number;
+  };
+  risks: IntelligenceRiskFinding[];
+  recommendations: string[];
+  limitations: string[];
+  ml_analysis?: IntelligenceModelResults;
+  message?: string;
+  generated_at?: string;
+}
+
+export interface IntelligenceUploadResponse {
+  success: boolean;
+  dataset_type: IntelligenceDatasetType;
+  file_name: string;
+  record_count: number;
+  columns_detected: string[];
+  missing_columns: string[];
+  message: string;
+}
+
 // Configurable API base URL (defaults to localhost:8000 for FastAPI)
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -69,10 +157,14 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       const url = error.config?.url || '';
       if (!url.includes('/auth/login') && !url.includes('/auth/register')) {
-        console.warn('Session expired or invalid. Clearing credentials.');
+        console.warn('Confirmed 401 Unauthorized: Session expired. Clearing credentials.');
         localStorage.removeItem('synchain_auth_token');
         window.dispatchEvent(new CustomEvent('synchain_auth_expired'));
       }
+    } else if (error.code === 'ECONNABORTED' || !error.response) {
+      console.error('Transient network error or timeout occurred. Maintaining session.');
+    } else {
+      console.error(`API Error: ${error.response?.status || 'Unknown'} - ${error.message}`);
     }
     return Promise.reject(error);
   }
@@ -374,6 +466,25 @@ export const apiService = {
 
   async getCanonicalSchema(): Promise<{ fields: Record<string, CanonicalFieldMeta> }> {
     const res = await apiClient.get('/ingestion/canonical-schema');
+    return res.data;
+  },
+
+  async uploadIntelligenceDataset(datasetType: IntelligenceDatasetType, file: File): Promise<IntelligenceUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post(`/intelligence/upload/${datasetType}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+
+  async analyzeIntelligence(): Promise<IntelligenceAnalysisResult> {
+    const res = await apiClient.post('/intelligence/analyze');
+    return res.data;
+  },
+
+  async getIntelligenceResults(): Promise<IntelligenceAnalysisResult> {
+    const res = await apiClient.get('/intelligence/results');
     return res.data;
   },
 };

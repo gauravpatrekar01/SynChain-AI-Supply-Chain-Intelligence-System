@@ -10,10 +10,14 @@ sys.path.insert(0, str(SRC_DIR))
 
 def get_simulation_functions():
     import simulation
-    return simulation.simulate_scenario, simulation.simulate_replenishment
+    return (
+        simulation.simulate_scenario,
+        simulation.simulate_replenishment,
+        simulation.run_explicit_scenario_simulation,
+    )
 
 
-simulate_scenario, simulate_replenishment = get_simulation_functions()
+simulate_scenario, simulate_replenishment, simulate_explicit_scenarios = get_simulation_functions()
 
 
 def test_shipment_arrives_on_expected_day():
@@ -162,7 +166,7 @@ def test_run_simulation_generates_three_scenarios():
     assert {"baseline", "mitigated", "automatic_replenishment"} <= set(summary)
 
 
-def test_decision_report_includes_all_three_scenarios(tmp_path):
+def test_decision_report_includes_all_three_scenarios(tmp_path, monkeypatch):
     import json
     import decision_report
 
@@ -186,11 +190,11 @@ def test_decision_report_includes_all_three_scenarios(tmp_path):
     with supplier_file.open("r", encoding="utf-8") as file:
         supplier = json.load(file)
 
-    result = decision_report.generate_decision_report(
-        simulation_file=simulation_file,
-        supplier_file=supplier_file,
-        output_file=report_file,
-    )
+    monkeypatch.setattr(decision_report, "SIMULATION_FILE", simulation_file)
+    monkeypatch.setattr(decision_report, "SELECTED_SUPPLIER_FILE", supplier_file)
+    monkeypatch.setattr(decision_report, "DECISION_REPORT_FILE", report_file)
+
+    result = decision_report.generate_decision_report()
 
     report_text = report_file.read_text(encoding="utf-8")
 
@@ -260,6 +264,26 @@ def test_replenishment_results_are_repeatable():
     assert first == second
     assert first[0]["order_placed"] == 1000
     assert first[2]["incoming_quantity"] == 1000
+
+
+def test_explicit_scenarios_are_pure_and_reject_fractional_day_assumptions():
+    assumptions = {
+        "initial_inventory": 20,
+        "daily_demand": 10,
+        "simulation_days": 5,
+        "shipment_quantity": 30,
+        "baseline_lead_time_days": 4,
+        "mitigated_lead_time_days": 2,
+    }
+    result = simulate_explicit_scenarios(**assumptions)
+
+    assert result["scenarios"]["baseline"]["summary"]["days_with_stockout"] == 2
+    assert result["scenarios"]["mitigation_assumption"]["summary"]["days_with_stockout"] == 0
+    assert result["assumptions"]["mitigation_is_a_user_supplied_assumption"] is True
+
+    fractional = {**assumptions, "mitigated_lead_time_days": 2.5}
+    with pytest.raises(ValueError, match="whole number"):
+        simulate_explicit_scenarios(**fractional)
 
 
 def test_run_simulation_has_expected_summary_fields():

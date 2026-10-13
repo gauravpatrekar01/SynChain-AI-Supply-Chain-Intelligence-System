@@ -1,0 +1,3 @@
+supplier_id,supplier_name,emissions_score,compliance_score
+S1,Supplier A,40,60
+S2,Supplier B,80,90

@@ -342,8 +342,8 @@ def generate_decision_report() -> dict:
 
     simulation_days = int(df["day"].max())
 
-    baseline = summaries["BASELINE"]
-    mitigated = summaries["MITIGATED"]
+    baseline = summaries["baseline"]
+    mitigated = summaries["mitigated"]
 
     stockout_delay = findings["stockout_delay"]
     unmet_demand_change = findings["unmet_demand_change"]
@@ -360,14 +360,15 @@ def generate_decision_report() -> dict:
         "=" * 65,
         "",
         "1. SIMULATION OVERVIEW",
-        "Scenarios analyzed: BASELINE, MITIGATED",
+        "Scenarios analyzed: BASELINE, MITIGATED, AUTOMATIC REPLENISHMENT",
         f"Simulation period: {simulation_days} days",
         "",
         "2. INVENTORY COMPARISON",
     ]
 
-    for scenario_name in ("BASELINE", "MITIGATED"):
-        scenario_summary = summaries[scenario_name]
+    for scenario_key in REQUIRED_SCENARIOS:
+        scenario_name = SCENARIO_LABELS[scenario_key]
+        scenario_summary = summaries[scenario_key]
 
         first_day = scenario_summary["first_stockout_day"]
 

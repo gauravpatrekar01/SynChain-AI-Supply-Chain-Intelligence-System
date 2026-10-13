@@ -1,4 +1,5 @@
 from pathlib import Path
+from functools import lru_cache
 
 import joblib
 import pandas as pd
@@ -35,6 +36,7 @@ FEATURE_COLUMNS = [
 # 2. Load the trained model
 # --------------------------------------------------
 
+@lru_cache(maxsize=1)
 def load_model():
     if not MODEL_FILE.exists():
         raise FileNotFoundError(

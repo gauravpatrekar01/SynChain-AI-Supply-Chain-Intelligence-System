@@ -36,14 +36,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           // Verify token and fetch user
           const userData = await apiService.getMe();
-          // Map backend snake_case to frontend camelCase if needed, 
-          // or assume api returns camelCase/we handle it here.
           setUser(mapUser(userData));
           setIsAuthenticated(true);
-        } catch (error) {
+        } catch (error: any) {
           console.error("Failed to verify token on load", error);
-          localStorage.removeItem('synchain_auth_token');
-          setIsAuthenticated(false);
+          // Only clear credentials on confirmed 401. 
+          // Timeouts/Network errors should keep the session (attempted recovery on next request).
+          if (error.response?.status === 401) {
+            localStorage.removeItem('synchain_auth_token');
+            setIsAuthenticated(false);
+          } else {
+            // Keep token, but mark as unauthenticated for this session 
+            // unless a successful call happens later.
+            setIsAuthenticated(false);
+          }
         }
       }
       setIsLoading(false);

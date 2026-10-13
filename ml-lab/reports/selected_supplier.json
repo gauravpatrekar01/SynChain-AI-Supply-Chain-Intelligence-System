@@ -11,5 +11,12 @@
     "available_capacity_units": 5175,
     "on_time_delivery_rate": 0.973,
     "recommendation_score": 0.39,
-    "prediction_source": "synthetic_development_data"
+    "prediction_source": "synthetic_development_data",
+    "supplier_source": "synthetic_demo_data",
+    "ranking_factors": {
+        "estimated_delay_probability": 0.4,
+        "average_lead_time_days": 0.25,
+        "quality_rate": 0.2,
+        "unit_cost_index": 0.15
+    }
 }
