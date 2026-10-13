@@ -1,0 +1,2 @@
+order_id,sku,quantity,unit_price,order_date,status
+00009,00001,2,2.50,01/02/2026,Processing
