@@ -87,6 +87,20 @@ class IntegrationHealthService:
     @staticmethod
     def get_last_successful_check(db: Session, integration_name: str) -> Optional[datetime]:
         try:
+            if settings.MONGODB_URL:
+                try:
+                    from app.core.mongodb import health_checks_col
+                    doc = health_checks_col().find_one(
+                        {"integration_name": integration_name, "status": "healthy"},
+                        sort=[("checked_at", -1)],
+                    )
+                    if doc and doc.get("checked_at"):
+                        ts = doc["checked_at"]
+                        if isinstance(ts, str):
+                            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                        return ts
+                except Exception:
+                    pass
             record = (
                 db.query(IntegrationHealthCheck)
                 .filter(
@@ -172,6 +186,91 @@ class IntegrationHealthService:
                 "last_sync_at": None,
                 "error_category": "database_error",
                 "error_message": _sanitize_error_message(str(e)),
+                "is_enabled": True,
+                "data_freshness": "Unavailable",
+                "details": {},
+            }
+
+    @classmethod
+    async def check_mongodb(cls, db: Session) -> Dict[str, Any]:
+        """Performs live health check on MongoDB Atlas cluster."""
+        name = "MongoDB Atlas Primary Database"
+        category = "database"
+        start_time = time.perf_counter()
+
+        if not settings.MONGODB_URL:
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "not_configured",
+                "connection_status": "unknown",
+                "last_checked_at": datetime.now(timezone.utc),
+                "last_successful_check_at": None,
+                "response_time_ms": 0.0,
+                "last_sync_at": None,
+                "error_category": "config_missing",
+                "error_message": "MONGODB_URL is not configured",
+                "is_enabled": False,
+                "data_freshness": "Not configured",
+                "details": {},
+            }
+
+        last_success = cls.get_last_successful_check(db, name)
+        try:
+            from app.core.mongodb import ping_mongo, get_mongo_db
+            res = await asyncio.to_thread(ping_mongo)
+            mongo_db = get_mongo_db()
+            colls = await asyncio.to_thread(mongo_db.list_collection_names)
+            latency_ms = res["latency_ms"]
+            now_dt = datetime.now(timezone.utc)
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "configured",
+                "connection_status": "healthy",
+                "last_checked_at": now_dt,
+                "last_successful_check_at": now_dt,
+                "response_time_ms": latency_ms,
+                "last_sync_at": None,
+                "error_category": None,
+                "error_message": None,
+                "is_enabled": True,
+                "data_freshness": "Atlas Cluster Operational",
+                "details": {
+                    "database": settings.MONGODB_DB_NAME or "synchain_db",
+                    "replicaSet": "atlas-vxj32u-shard-0",
+                    "collections": colls,
+                    "collections_count": len(colls),
+                    "ssl": True,
+                },
+            }
+        except Exception as e:
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            err_str = str(e)
+            error_cat = "connection_error"
+            if "TLSV1_ALERT_INTERNAL_ERROR" in err_str or "alert internal error" in err_str:
+                error_cat = "ip_access_denied"
+                sanitized_msg = "MongoDB Atlas TLS handshake rejected. Ensure current IP is whitelisted in Atlas Network Access (or 0.0.0.0/0 enabled)."
+            elif "Authentication failed" in err_str or "bad auth" in err_str.lower():
+                error_cat = "auth_error"
+                sanitized_msg = "MongoDB Atlas credentials rejected (verify username/password)."
+            elif "timed out" in err_str.lower() or "timeout" in err_str.lower():
+                error_cat = "timeout"
+                sanitized_msg = "MongoDB Atlas connection timed out."
+            else:
+                sanitized_msg = _sanitize_error_message(f"MongoDB Atlas connection failed: {err_str}")
+
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "configured",
+                "connection_status": "unhealthy",
+                "last_checked_at": datetime.now(timezone.utc),
+                "last_successful_check_at": last_success,
+                "response_time_ms": latency_ms,
+                "last_sync_at": None,
+                "error_category": error_cat,
+                "error_message": sanitized_msg,
                 "is_enabled": True,
                 "data_freshness": "Unavailable",
                 "details": {},
@@ -1053,21 +1152,102 @@ class IntegrationHealthService:
             }
 
     @classmethod
+    async def check_ml_model(cls, db: Session) -> Dict[str, Any]:
+        """Performs live health and readiness check on ML delay prediction model and datasets."""
+        from app.services.ml.ml_service import MLIntelligenceService
+        name = "Machine Learning Delay Predictor"
+        category = "ai_ml"
+        start_time = time.perf_counter()
+
+        try:
+            health_info = await asyncio.to_thread(MLIntelligenceService.check_model_health)
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            status_val = health_info.get("status", "unknown")
+            is_healthy = status_val == "healthy"
+            last_success = datetime.now(timezone.utc) if is_healthy else cls.get_last_successful_check(db, name)
+
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "configured" if health_info.get("model_loaded") else "not_configured",
+                "connection_status": status_val,
+                "last_checked_at": datetime.now(timezone.utc),
+                "last_successful_check_at": last_success,
+                "response_time_ms": latency_ms,
+                "last_sync_at": None,
+                "error_category": None if is_healthy else "ml_model_error",
+                "error_message": None if is_healthy else health_info.get("message"),
+                "is_enabled": True,
+                "data_freshness": "Model artifact active",
+                "details": {
+                    "model_path": health_info.get("model_path"),
+                    "features_count": health_info.get("features_count"),
+                    "supplier_master_exists": health_info.get("supplier_master_exists"),
+                    "shipment_history_exists": health_info.get("shipment_history_exists"),
+                    "test_inference_latency_ms": health_info.get("test_inference_latency_ms"),
+                },
+            }
+        except Exception as e:
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            last_success = cls.get_last_successful_check(db, name)
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "configured",
+                "connection_status": "unhealthy",
+                "last_checked_at": datetime.now(timezone.utc),
+                "last_successful_check_at": last_success,
+                "response_time_ms": latency_ms,
+                "last_sync_at": None,
+                "error_category": "ml_service_error",
+                "error_message": _sanitize_error_message(str(e)),
+                "is_enabled": True,
+                "data_freshness": "Unavailable",
+                "details": {},
+            }
+
+    @classmethod
     async def check_all_integrations(cls, db: Session, persist: bool = True) -> List[Dict[str, Any]]:
         """Runs health checks across all known integrations and persists results."""
-        tasks = [
-            cls.check_postgres(db),
+        tasks = []
+        if settings.MONGODB_URL:
+            tasks.append(cls.check_mongodb(db))
+        else:
+            tasks.append(cls.check_postgres(db))
+
+        tasks.extend([
             cls.check_neo4j(db),
             cls.check_erpnext(db),
             cls.check_openweather(db),
             cls.check_newsdata(db),
             cls.check_storage(db),
             cls.check_smtp(db),
-        ]
+            cls.check_ml_model(db),
+        ])
 
         results = await asyncio.gather(*tasks)
 
         if persist:
+            if settings.MONGODB_URL:
+                try:
+                    from app.core.mongodb import health_checks_col
+                    mongo_docs = []
+                    for item in results:
+                        mongo_docs.append({
+                            "integration_name": item["name"],
+                            "category": item["category"],
+                            "status": item["connection_status"],
+                            "latency_ms": item["response_time_ms"],
+                            "error_category": item.get("error_category"),
+                            "error_message": item.get("error_message"),
+                            "details": item.get("details"),
+                            "checked_at": item["last_checked_at"],
+                        })
+                    if mongo_docs:
+                        await asyncio.to_thread(health_checks_col().insert_many, mongo_docs)
+                except Exception:
+                    pass
+
             for item in results:
                 try:
                     record = IntegrationHealthCheck(
@@ -1096,8 +1276,15 @@ class IntegrationHealthService:
         target = integration_name.strip().lower()
         result = None
 
-        if "postgres" in target or "database" in target:
+        if "mongo" in target or "atlas" in target:
+            result = await cls.check_mongodb(db)
+        elif "postgres" in target or "neon" in target:
             result = await cls.check_postgres(db)
+        elif "database" in target:
+            if settings.MONGODB_URL:
+                result = await cls.check_mongodb(db)
+            else:
+                result = await cls.check_postgres(db)
         elif "neo4j" in target or "graph" in target:
             result = await cls.check_neo4j(db)
         elif "erpnext" in target or "erp" in target:
@@ -1110,6 +1297,8 @@ class IntegrationHealthService:
             result = await cls.check_storage(db)
         elif "smtp" in target or "email" in target:
             result = await cls.check_smtp(db)
+        elif "ml" in target or "model" in target or "ai" in target or "delay" in target or "predict" in target:
+            result = await cls.check_ml_model(db)
         else:
             # Check DB integrations
             db_int = db.query(EnterpriseIntegration).filter(EnterpriseIntegration.name.ilike(f"%{integration_name}%")).first()
@@ -1163,6 +1352,22 @@ class IntegrationHealthService:
                     }
 
         if result and persist:
+            if settings.MONGODB_URL:
+                try:
+                    from app.core.mongodb import health_checks_col
+                    mongo_doc = {
+                        "integration_name": result["name"],
+                        "category": result["category"],
+                        "status": result["connection_status"],
+                        "latency_ms": result["response_time_ms"],
+                        "error_category": result.get("error_category"),
+                        "error_message": result.get("error_message"),
+                        "details": result.get("details"),
+                        "checked_at": result["last_checked_at"],
+                    }
+                    await asyncio.to_thread(health_checks_col().insert_one, mongo_doc)
+                except Exception:
+                    pass
             try:
                 record = IntegrationHealthCheck(
                     integration_name=result["name"],
@@ -1184,6 +1389,40 @@ class IntegrationHealthService:
     @classmethod
     def get_integration_history(cls, db: Session, integration_name: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Retrieves recent health check records for a specific integration."""
+        if settings.MONGODB_URL:
+            try:
+                import re
+                from app.core.mongodb import health_checks_col
+                regx = re.compile(re.escape(integration_name), re.IGNORECASE)
+                cursor = (
+                    health_checks_col()
+                    .find({"integration_name": {"$regex": regx}})
+                    .sort("checked_at", -1)
+                    .limit(limit)
+                )
+                docs = list(cursor)
+                if docs:
+                    res = []
+                    for d in docs:
+                        checked_at = d.get("checked_at")
+                        if isinstance(checked_at, datetime):
+                            checked_str = checked_at.isoformat()
+                        else:
+                            checked_str = str(checked_at) if checked_at else None
+                        res.append({
+                            "id": str(d.get("_id", d.get("id"))),
+                            "integration_name": d.get("integration_name"),
+                            "category": d.get("category"),
+                            "status": d.get("status"),
+                            "latency_ms": float(d.get("latency_ms", 0.0)),
+                            "error_category": d.get("error_category"),
+                            "error_message": d.get("error_message"),
+                            "checked_at": checked_str,
+                            "details": d.get("details"),
+                        })
+                    return res
+            except Exception:
+                pass
         try:
             records = (
                 db.query(IntegrationHealthCheck)
