@@ -57,9 +57,57 @@ export const mockDefaultSimulationResult: SimulationResultMetrics = {
   mitigationStrategies: []
 };
 
-export const mockDemandForecast: DemandForecastPoint[] = [
-  { date: '2026-10-01', predictedDemandUnits: 1000, confidenceLower: 900, confidenceUpper: 1100, historicalBaseline: 950 }
+/**
+ * DEMO / SYNTHETIC HISTORICAL DEMAND SERIES
+ * Validated 30-day consecutive daily observations for UI demonstrations and test runs.
+ * Note: These values represent synthetic simulation data for SKU 'IC-3NM-A18'
+ * and must not be treated as actual production figures.
+ */
+export const DEMO_SYNTHETIC_HISTORICAL_DEMAND: Array<{ date: string; demand: number }> = [
+  { date: '2026-09-01', demand: 1240 },
+  { date: '2026-09-02', demand: 1285 },
+  { date: '2026-09-03', demand: 1310 },
+  { date: '2026-09-04', demand: 1290 },
+  { date: '2026-09-05', demand: 1150 },
+  { date: '2026-09-06', demand: 1100 },
+  { date: '2026-09-07', demand: 1260 },
+  { date: '2026-09-08', demand: 1320 },
+  { date: '2026-09-09', demand: 1350 },
+  { date: '2026-09-10', demand: 1380 },
+  { date: '2026-09-11', demand: 1340 },
+  { date: '2026-09-12', demand: 1190 },
+  { date: '2026-09-13', demand: 1120 },
+  { date: '2026-09-14', demand: 1290 },
+  { date: '2026-09-15', demand: 1360 },
+  { date: '2026-09-16', demand: 1410 },
+  { date: '2026-09-17', demand: 1390 },
+  { date: '2026-09-18', demand: 1360 },
+  { date: '2026-09-19', demand: 1210 },
+  { date: '2026-09-20', demand: 1140 },
+  { date: '2026-09-21', demand: 1310 },
+  { date: '2026-09-22', demand: 1390 },
+  { date: '2026-09-23', demand: 1430 },
+  { date: '2026-09-24', demand: 1420 },
+  { date: '2026-09-25', demand: 1380 },
+  { date: '2026-09-26', demand: 1230 },
+  { date: '2026-09-27', demand: 1160 },
+  { date: '2026-09-28', demand: 1340 },
+  { date: '2026-09-29', demand: 1420 },
+  { date: '2026-09-30', demand: 1460 },
 ];
+
+/**
+ * DEMO / SYNTHETIC FORECAST FALLBACK
+ * Used strictly when backend connection is unavailable.
+ */
+export const mockDemandForecast: DemandForecastPoint[] = DEMO_SYNTHETIC_HISTORICAL_DEMAND.map((pt) => ({
+  date: pt.date,
+  actualDemandUnits: pt.demand,
+  predictedDemandUnits: pt.demand,
+  confidenceLower: Math.round(pt.demand * 0.9),
+  confidenceUpper: Math.round(pt.demand * 1.1),
+  historicalBaseline: pt.demand,
+}));
 
 export const mockInventoryForecast: InventoryForecastPoint[] = [
   { date: '2026-10-01', projectedStock: 5000, safetyStockFloor: 2000 }

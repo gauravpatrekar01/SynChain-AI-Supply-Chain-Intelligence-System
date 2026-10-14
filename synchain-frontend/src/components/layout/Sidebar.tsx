@@ -61,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       title: 'Disruption & Decision',
       items: [
         { id: 'scenario-builder', label: 'Scenario Builder', icon: Cpu },
-        { id: 'simulation-results', label: 'Simulation Results', icon: Zap, badge: 'AI' },
+        { id: 'decision-simulator', label: 'Decision Simulator', icon: Zap },
         { id: 'recommendations', label: 'AI Recommendations', icon: Sparkles, badge: '3 Ready', badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-400/40' },
       ],
     },

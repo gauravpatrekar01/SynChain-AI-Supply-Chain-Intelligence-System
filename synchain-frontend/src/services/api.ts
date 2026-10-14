@@ -6,6 +6,13 @@ import {
   ScenarioInput,
   SimulationResultMetrics,
   DemandForecastPoint,
+  DemandForecastRequestPayload,
+  DemandForecastResponsePayload,
+  InventoryPolicyRequestPayload,
+  InventoryPolicyResponsePayload,
+  ForecastHealthResponsePayload,
+  InventoryItemDetail,
+  DemandHistoryResponsePayload,
   InventoryForecastPoint,
   CommodityPriceIndex,
   RiskItem,
@@ -40,6 +47,7 @@ import {
   mockDigitalTwinNodes,
   mockDefaultSimulationResult,
   mockDemandForecast,
+  DEMO_SYNTHETIC_HISTORICAL_DEMAND,
   mockInventoryForecast,
   mockCommodityIndices,
   mockRisks,
@@ -364,6 +372,58 @@ export const apiService = {
     }
   },
 
+  // Available SKU/Product Inventory Items with stock levels
+  async getInventoryItems(): Promise<InventoryItemDetail[]> {
+    try {
+      const res = await apiClient.get('/inventory/items');
+      return res.data;
+    } catch (err) {
+      console.warn('Failed to fetch backend inventory items, using offline fallback catalog:', err);
+      return [
+        {
+          sku: 'IC-3NM-A18',
+          name: '3nm Ultra AI Neural Processor',
+          category: 'Logic Silicon',
+          warehouse: 'Giga Austin Warehouse',
+          warehouseLocation: 'Austin, TX',
+          currentStock: 45000,
+          safetyStock: 30000,
+          reorderLevel: 35000,
+          reorderQuantity: 15000,
+          unitPrice: 480.0,
+          leadTimeDays: 7,
+          dataSource: 'deterministic_demo',
+          hasHistoricalDemand: true,
+          description: 'Deterministic neural benchmark time-series simulation',
+        },
+        {
+          sku: 'P0001',
+          name: 'Groceries Item P0001',
+          category: 'Groceries',
+          warehouse: 'Austin Retail Hub S001',
+          warehouseLocation: 'Austin, TX',
+          currentStock: 231,
+          safetyStock: 135,
+          reorderLevel: 150,
+          reorderQuantity: 200,
+          unitPrice: 33.5,
+          leadTimeDays: 7,
+          dataSource: 'retail_dataset_actual',
+          hasHistoricalDemand: true,
+          description: '731 days of verified daily customer sales & inventory observations',
+        },
+      ];
+    }
+  },
+
+  // Historical customer demand observations for a specific SKU
+  async getDemandHistory(sku: string, limit: number = 90): Promise<DemandHistoryResponsePayload> {
+    const res = await apiClient.get(`/forecast/demand-history/${encodeURIComponent(sku)}`, {
+      params: { limit },
+    });
+    return res.data;
+  },
+
   // Predictive Demand & Price Forecast (Real Data from DB)
   async getForecast(): Promise<{
     demand: DemandForecastPoint[];
@@ -544,6 +604,17 @@ export const apiService = {
 
   async getIntelligenceResults(): Promise<IntelligenceAnalysisResult> {
     const res = await apiClient.get('/intelligence/results');
+    return res.data;
+  },
+
+  // ---  Decision Simulator ---
+  async getSimulationSuppliers(): Promise<SimulationSuppliersResponse> {
+    const res = await apiClient.get('/simulation/suppliers');
+    return res.data;
+  },
+
+  async runDecisionSimulation(payload: DecisionSimulationPayload): Promise<DecisionSimulationResult> {
+    const res = await apiClient.post('/simulation/decision', payload);
     return res.data;
   },
 };

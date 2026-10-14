@@ -11,7 +11,7 @@ import { GeoFleetMap } from '../geomap/GeoFleetMap';
 import { ScenarioBuilder } from '../simulation/ScenarioBuilder';
 import { SimulationResultsView } from '../simulation/SimulationResultsView';
 import { RecommendationsView } from '../recommendations/RecommendationsView';
-import { ForecastView } from '../forecast/ForecastView';
+import { DecisionSimulatorView } from '../simulation/DecisionSimulatorView';
 import { RiskMatrixView } from '../risk/RiskMatrixView';
 import { SupplierRegistryView } from '../suppliers/SupplierRegistryView';
 import { InventoryBufferView } from '../inventory/InventoryBufferView';
@@ -38,6 +38,7 @@ const PAGE_IDS = [
   'ingestion',
   'intelligence',
   'settings',
+  'decision-simulator',
 ];
 
 export const MainLayout: React.FC = () => {
@@ -63,8 +64,8 @@ export const MainLayout: React.FC = () => {
         return <SimulationResultsView onNavigate={navigateToPage} />;
       case 'recommendations':
         return <RecommendationsView />;
-      case 'forecast':
-        return <ForecastView />;
+      case 'decision-simulator':
+        return <DecisionSimulatorView />;
       case 'risk':
         return <RiskMatrixView onNavigate={navigateToPage} />;
       case 'suppliers':

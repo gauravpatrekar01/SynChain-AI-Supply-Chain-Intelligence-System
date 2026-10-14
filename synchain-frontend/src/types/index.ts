@@ -309,6 +309,111 @@ export interface DemandForecastPoint {
   confidenceLower: number;
   confidenceUpper: number;
   historicalBaseline: number;
+  trend?: number;
+}
+
+export interface ForecastMetricsData {
+  mae?: number | null;
+  rmse?: number | null;
+  wape?: number | null;
+  mape?: number | null;
+  mape_status?: string | null;
+  sample_size?: number | null;
+  evaluation_split?: string | null;
+}
+
+export interface DemandForecastRequestPayload {
+  productId?: string;
+  historicalData: Array<{ date: string; demand: number }>;
+  horizonDays: number;
+  intervalWidth?: number;
+  evaluate?: boolean;
+}
+
+export interface DemandForecastResponsePayload {
+  status: string;
+  productId?: string;
+  algorithm: string;
+  modelVersion: string;
+  horizon: number;
+  metrics?: ForecastMetricsData;
+  forecast: DemandForecastPoint[];
+  historical: DemandForecastPoint[];
+  all_points?: DemandForecastPoint[];
+}
+
+export interface InventoryPolicyRequestPayload {
+  productId?: string;
+  forecastPoints: Array<DemandForecastPoint | { predictedDemandUnits: number } | number>;
+  leadTimeDays: number;
+  targetServiceLevel?: number;
+  leadTimeStdDays?: number;
+  dailyForecastRmse?: number;
+  cumulativeLeadTimeErrors?: number[];
+  holdingCostPerUnit?: number;
+  stockoutCostPerUnit?: number;
+  currentStock?: number;
+  standardReorderQuantity?: number;
+}
+
+export interface InventoryPolicyResponsePayload {
+  status: string;
+  productId?: string;
+  leadTimeDays: number;
+  targetServiceLevel: number;
+  expectedLeadTimeDemand: number;
+  safetyStock: number;
+  reorderPoint: number;
+  currentStock?: number | null;
+  recommendedReorderQuantity?: number | null;
+  reorderRequired?: boolean | null;
+  dataSource?: string;
+  leadTimeUncertaintySigma?: number;
+  leadTimeDemandBounds?: {
+    lower: number;
+    upper: number;
+    nominalCoveragePct: number;
+  };
+  methodUsed: string;
+  criticalFractile?: number | null;
+  leadTimeStdDays?: number;
+  assumptions: string[];
+  errorMessage?: string;
+}
+
+export interface InventoryItemDetail {
+  sku: string;
+  name: string;
+  category: string;
+  warehouse: string;
+  warehouseLocation?: string;
+  currentStock: number;
+  safetyStock: number;
+  reorderLevel: number;
+  reorderQuantity: number;
+  unitPrice: number;
+  leadTimeDays: number;
+  dataSource: 'postgresql_live' | 'retail_dataset_actual' | 'deterministic_demo' | string;
+  hasHistoricalDemand: boolean;
+  description?: string;
+}
+
+export interface DemandHistoryResponsePayload {
+  sku: string;
+  productName: string;
+  dataSource: string;
+  isSimulated: boolean;
+  totalObservations: number;
+  storeId?: string;
+  historicalData: Array<{ date: string; demand: number }>;
+}
+
+export interface ForecastHealthResponsePayload {
+  status: string;
+  engine: string;
+  prophetVersion: string;
+  availableAlgorithms: string[];
+  ready: boolean;
 }
 
 export interface InventoryForecastPoint {
@@ -648,3 +753,130 @@ export interface DashboardRecommendationData {
   createdAt: string;
 }
 
+// ==========================================
+// Decision Simulator Types
+// ==========================================
+
+export interface SupplierOption {
+  supplier_id: string;
+  supplier_name: string;
+  location: string;
+  average_lead_time_days: number;
+  reliability_score: number;
+  available_capacity_units: number | null;
+  unit_cost_index: number | null;
+  component_types: string[];
+  is_active: boolean;
+  data_provenance: string;
+}
+
+export interface SimulationSuppliersResponse {
+  total: number;
+  suppliers: SupplierOption[];
+}
+
+export interface DecisionSimulationPayload {
+  sku: string;
+  initialInventory: number;
+  dailyDemand?: number;
+  dailyDemandSeries?: number[];
+  useForecastDemand?: boolean;
+  simulationDays?: number;
+  orderQuantity?: number;
+  orderDay?: number;
+  safetyStock?: number;
+  primarySupplierId?: string;
+  primarySupplierName?: string;
+  primaryLeadTimeDays?: number;
+  disruptionDelayDays?: number;
+  disruptionType?: string;
+  alternativeSupplierId?: string;
+  alternativeSupplierName?: string;
+  alternativeLeadTimeDays?: number;
+  alternativeCapacity?: number;
+  unitCostBaseline?: number;
+  unitCostAlternative?: number;
+  holdingCostPerUnitDay?: number;
+  stockoutPenaltyPerUnit?: number;
+  dataProvenance?: string;
+}
+
+export interface DailyTrajectoryPoint {
+  day: number;
+  startingInventory: number;
+  incomingQuantity: number;
+  demand: number;
+  fulfilledDemand: number;
+  unmetDemand: number;
+  endingInventory: number;
+  cumulativeUnmetDemand: number;
+  isSafetyStockBreached: boolean;
+  isStockout: boolean;
+}
+
+export interface ScenarioSummary {
+  endingInventory: number;
+  totalDemand: number;
+  totalFulfilledDemand: number;
+  totalUnmetDemand: number;
+  serviceLevelPct: number;
+  stockoutDaysCount: number;
+  firstStockoutDay: number | null;
+  safetyStockBreachDaysCount: number;
+  firstSafetyStockBreachDay: number | null;
+  supplierArrivalDay: number;
+  estimatedPurchaseCostUsd: number | null;
+  estimatedHoldingCostUsd: number | null;
+  estimatedStockoutPenaltyUsd: number | null;
+  estimatedTotalCostUsd: number | null;
+}
+
+export interface ScenarioDetail {
+  scenarioName: string;
+  scenarioType: 'baseline' | 'disrupted' | 'alternative';
+  supplierName: string;
+  leadTimeDays: number;
+  arrivalDay: number;
+  dailyTrajectory: DailyTrajectoryPoint[];
+  summary: ScenarioSummary;
+}
+
+export interface ScenarioComparison {
+  hasAlternativeScenario: boolean;
+  daysSavedByAlternative: number | null;
+  unmetDemandPreventedByAlternative: number | null;
+  stockoutPrevented: boolean | null;
+  costDifferenceUsd: number | null;
+  costComparisonStatus: string;
+}
+
+export type DecisionAction =
+  | 'SWITCH_TO_ALTERNATIVE'
+  | 'MAINTAIN_PRIMARY'
+  | 'EXPEDITE_AND_CONSERVE'
+  | 'INSUFFICIENT_ALTERNATIVE_DATA'
+  | 'BUFFER_ABSORBS_DELAY';
+
+export interface DecisionAdvice {
+  recommendedAction: DecisionAction;
+  recommendationTitle: string;
+  explanation: string;
+  keyFactors: string[];
+  advisoryDisclaimer: string;
+}
+
+export interface DecisionSimulationResult {
+  scenarioId: string;
+  sku: string;
+  simulatedAt: string;
+  simulationHorizonDays: number;
+  dataProvenance: string;
+  demandSource: string;
+  demandType: string;
+  dailyDemandRate: number;
+  scenarios: Record<string, ScenarioDetail>;
+  comparison: ScenarioComparison;
+  decision: DecisionAdvice;
+  assumptions: string[];
+  limitations: string[];
+}

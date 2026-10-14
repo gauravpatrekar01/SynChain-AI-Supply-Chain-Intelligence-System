@@ -16,6 +16,9 @@ from app.api.v1.ingestion import router as ingestion_router
 from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.intelligence import router as intelligence_router
 from app.api.v1.ml import router as ml_router
+from app.api.v1.forecast import router as forecast_router
+from app.api.v1.simulation import router as simulation_router
+from app.schemas.forecasting import DemandForecastRequest, DemandForecastResponse
 
 router = APIRouter()
 router.include_router(test_email_router, prefix="/test", tags=["test"])
@@ -25,6 +28,8 @@ router.include_router(ingestion_router)
 router.include_router(intelligence_router)
 router.include_router(dashboard_router)
 router.include_router(ml_router)
+router.include_router(forecast_router)
+router.include_router(simulation_router)
 
 # Initialize services
 forecast_service = ForecastingService()
@@ -35,11 +40,8 @@ copilot_service = AICopilotService()
 
 # --- Pydantic Models for Requests ---
 
-
-class ForecastRequest(BaseModel):
-    productId: str
-    historicalData: List[Dict[str, Any]]
-    horizonDays: int = 30
+# Backward-compatible alias for existing consumers
+ForecastRequest = DemandForecastRequest
 
 
 class SimulationRequest(BaseModel):
@@ -141,18 +143,6 @@ async def get_realtime_notifications(db: Session = Depends(get_db)):
     except Exception:
         return []
 
-
-@router.post("/forecast")
-async def generate_forecast(request: ForecastRequest):
-    try:
-        # Generate forecast using Prophet
-        forecast_result = forecast_service.generate_demand_forecast(
-            historical_data=request.historicalData,
-            horizon=request.horizonDays
-        )
-        return forecast_result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/risk/{entity_type}/{entity_id}")

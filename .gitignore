@@ -50,3 +50,6 @@ htmlcov/
 
 # Temporary Python files
 *.py,cover
+
+# Temporary uploaded files
+backend/storage/uploads_temp/
