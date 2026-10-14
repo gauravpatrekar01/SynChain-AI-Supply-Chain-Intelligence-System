@@ -35,6 +35,10 @@ import {
   DashboardAlertData,
   DashboardRecommendationData,
   Supplier,
+  SupplierFormData,
+  SupplierImportPreview,
+  SupplierImportResult,
+  SupplierListResponse,
   Shipment,
   ShipmentSummary,
   ShipmentListResponse,
@@ -320,9 +324,16 @@ export const apiService = {
   },
 
   // Suppliers (Real Data from DB)
-  async getSuppliers(): Promise<Supplier[]> {
+  async getSuppliers(params?: {
+    search?: string;
+    tier?: string;
+    health_status?: string;
+    is_active?: string;
+    sort_by?: string;
+    sort_order?: string;
+  }): Promise<Supplier[]> {
     try {
-      const res = await apiClient.get('/suppliers');
+      const res = await apiClient.get('/suppliers', { params: { ...params, flat: true } });
       if (Array.isArray(res.data) && res.data.length > 0) {
         return res.data;
       }
@@ -330,6 +341,67 @@ export const apiService = {
     } catch {
       return mockSuppliers;
     }
+  },
+
+  async getSuppliersPaginated(params?: {
+    search?: string;
+    tier?: string;
+    health_status?: string;
+    is_active?: string;
+    sort_by?: string;
+    sort_order?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<SupplierListResponse> {
+    const res = await apiClient.get<SupplierListResponse>('/suppliers', { params });
+    return res.data;
+  },
+
+  async getSupplierById(id: string): Promise<Supplier> {
+    const res = await apiClient.get<Supplier>(`/suppliers/${id}`);
+    return res.data;
+  },
+
+  async createSupplier(data: SupplierFormData): Promise<Supplier> {
+    const res = await apiClient.post<Supplier>('/suppliers', data);
+    return res.data;
+  },
+
+  async updateSupplier(id: string, data: Partial<SupplierFormData>): Promise<Supplier> {
+    const res = await apiClient.put<Supplier>(`/suppliers/${id}`, data);
+    return res.data;
+  },
+
+  async deleteSupplier(id: string): Promise<{ success: boolean; message?: string }> {
+    const res = await apiClient.delete<{ success: boolean; message?: string }>(`/suppliers/${id}`);
+    return res.data;
+  },
+
+  async downloadSupplierTemplate(): Promise<Blob> {
+    const res = await apiClient.get('/suppliers/import/template', {
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
+  async previewSupplierCsv(file: File): Promise<SupplierImportPreview> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post<SupplierImportPreview>('/suppliers/import/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+
+  async confirmSupplierCsv(
+    previewToken: string,
+    mode: 'skip_duplicates' | 'fail_on_duplicates' = 'skip_duplicates'
+  ): Promise<SupplierImportResult> {
+    const res = await apiClient.post<SupplierImportResult>('/suppliers/import/confirm', {
+      preview_token: previewToken,
+      mode,
+    });
+    return res.data;
   },
 
   // Digital Twin Topology (Real Nodes & Edges from DB)

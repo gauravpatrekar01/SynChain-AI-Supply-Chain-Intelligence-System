@@ -61,14 +61,23 @@ class EnterpriseIntegration(Base):
 class Supplier(Base):
     __tablename__ = "suppliers"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    supplier_code = Column(String(100), unique=True, nullable=True, index=True)
     name = Column(String(255), nullable=False, index=True)
     tier = Column(String(50), nullable=False)
     category = Column(String(255), nullable=False)
+    location = Column(String(255), nullable=True)
     country = Column(String(100), nullable=False)
+    contact_person = Column(String(255), nullable=True)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(100), nullable=True)
     reliability_score = Column(Numeric(5, 2), nullable=False)
+    quality_rating = Column(Numeric(5, 2), nullable=True)
     spend_annual_usd = Column(Numeric(15, 2), nullable=False)
     health_status = Column(String(50), nullable=False)
     single_source_risk = Column(Boolean, default=False)
+    lead_time_days = Column(Integer, nullable=True)
+    capacity = Column(Integer, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

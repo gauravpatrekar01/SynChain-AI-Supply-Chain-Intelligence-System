@@ -279,14 +279,111 @@ export interface GeoRiskZone {
 // --- Supplier ---
 export interface Supplier {
   id: string;
+  supplier_code?: string;
+  supplierCode?: string;
   name: string;
-  tier: 'Tier-1' | 'Tier-2';
+  tier: 'Tier-1' | 'Tier-2' | string;
   category: string;
+  location?: string;
   country: string;
+  contact_person?: string;
+  contactPerson?: string;
+  email?: string;
+  phone?: string;
   reliabilityScore: number;
+  reliability_score?: number;
+  quality_rating?: number;
+  qualityRating?: number;
   spendAnnualUsd: number;
+  spend_annual_usd?: number;
+  spend_usd?: number;
   healthStatus: HealthStatus;
+  health_status?: HealthStatus | string;
   singleSourceRisk: boolean;
+  single_source_risk?: boolean;
+  single_source?: boolean;
+  lead_time_days?: number;
+  leadTimeDays?: number;
+  capacity?: number;
+  is_active?: boolean;
+  isActive?: boolean;
+  active_shipments_count?: number;
+  activeShipmentsCount?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SupplierFormData {
+  supplier_code?: string;
+  name: string;
+  tier: string;
+  category: string;
+  location?: string;
+  country?: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  reliability_score: number;
+  quality_rating?: number;
+  spend_annual_usd: number;
+  health_status: HealthStatus | string;
+  single_source_risk: boolean;
+  lead_time_days?: number;
+  capacity?: number;
+  is_active: boolean;
+}
+
+export interface SupplierImportRowError {
+  row: number;
+  field?: string;
+  message: string;
+  raw_data?: Record<string, any>;
+}
+
+export interface SupplierImportPreview {
+  preview_token: string;
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
+  errors: SupplierImportRowError[];
+  preview_records: Array<{
+    row_number?: number;
+    supplier_code?: string;
+    name: string;
+    tier: string;
+    category: string;
+    location?: string;
+    country?: string;
+    contact_person?: string;
+    email?: string;
+    phone?: string;
+    reliability_score?: number;
+    quality_rating?: number;
+    spend_annual_usd?: number;
+    health_status?: string;
+    single_source_risk?: boolean;
+    lead_time_days?: number;
+    capacity?: number;
+    is_active?: boolean;
+  }>;
+}
+
+export interface SupplierImportResult {
+  success: boolean;
+  imported_count: number;
+  skipped_count: number;
+  invalid_count: number;
+  imported_suppliers: Supplier[];
+  errors: SupplierImportRowError[];
+}
+
+export interface SupplierListResponse {
+  items: Supplier[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
 }
 
 // --- Scenario Simulation Engine ---
