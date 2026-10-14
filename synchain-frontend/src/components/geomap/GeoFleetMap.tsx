@@ -1,310 +1,196 @@
-import React, { useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, Polyline, Popup, ScaleControl, TileLayer, Tooltip, useMap, ZoomControl } from 'react-leaflet';
+import type { GeoJsonObject } from 'geojson';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { AlertTriangle, ArrowRight, Globe2, Layers, LocateFixed, MapPin, Plane, Search, Ship, TrainFront, Truck, X } from 'lucide-react';
 import { useSupplyChain } from '../../context/SupplyChainContext';
-import { Shipment, PortNode } from '../../types';
-import {
-  Globe2,
-  Ship,
-  Plane,
-  AlertTriangle,
-} from 'lucide-react';
-import { NeonBadge } from '../common/NeonBadge';
-import { soundFX } from '../../services/audioService';
+import type { Shipment } from '../../types';
+import { getShipmentRoute, needsAttention, routeColor, statusLabel, validCoordinate } from './routeGeometry';
+import type { Coordinate, ShipmentRoute } from './routeGeometry';
+import './geoFleetMap.css';
 
-// Custom Leaflet Icons using SVG Data URIs
-const createCustomIcon = (color: string, iconType: 'ship' | 'plane' | 'port') => {
-  const iconSvg =
-    iconType === 'ship'
-      ? `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5"><circle cx="12" cy="12" r="10" fill="${color}" fill-opacity="0.3"/><path d="M2 21a8 8 0 0 1 13.8-5.3L18 18l3.6-3.6a8 8 0 0 1-5.4 6.6z"/></svg>`
-      : iconType === 'plane'
-      ? `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`
-      : `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5"><circle cx="12" cy="12" r="9" fill="${color}" fill-opacity="0.4"/><circle cx="12" cy="5" r="3"/><line x1="12" y1="8" x2="12" y2="21"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/></svg>`;
-
-  return L.divIcon({
-    className: 'custom-leaflet-marker',
-    html: `<div style="transform: translate(-14px, -14px);">${iconSvg}</div>`,
-    iconSize: [28, 28],
-  });
+type FleetFilter = 'all' | 'ocean' | 'air' | 'land' | 'attention';
+const modeIcons = { ocean: Ship, air: Plane, ground: Truck, rail: TrainFront };
+const modeNames = { ocean: 'Ocean', air: 'Air', ground: 'Ground', rail: 'Rail' };
+const formatEta = (eta: string) => {
+  if (!eta) return 'Not available';
+  const date = new Date(eta);
+  return Number.isNaN(date.getTime()) ? eta : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const shipIconNormal = createCustomIcon('#3B82F6', 'ship');
-const shipIconWarning = createCustomIcon('#F59E0B', 'ship');
-const planeIcon = createCustomIcon('#8B5CF6', 'plane');
-const portIcon = createCustomIcon('#06B6D4', 'port');
-
-// Default route waypoints fallback lookup
-const routeCoordinates: Record<string, { current: [number, number]; waypoints: [number, number][] }> = {
-  'SHP-9842': {
-    current: [29.8, -160.4],
-    waypoints: [[31.23, 121.47], [30.5, 140.2], [29.8, -160.4], [33.74, -118.26]],
-  },
-  'SHP-7729': {
-    current: [46.2, 55.4],
-    waypoints: [[25.07, 121.23], [35.2, 85.1], [46.2, 55.4], [50.03, 8.57]],
-  },
-  'SHP-4109': {
-    current: [18.5, 116.2],
-    waypoints: [[29.86, 121.54], [18.5, 116.2], [1.32, 103.65], [12.58, 43.33], [51.95, 4.02]],
-  },
-  'SHP-3310': {
-    current: [58.4, -142.1],
-    waypoints: [[37.46, 126.44], [54.2, 170.5], [58.4, -142.1], [41.97, -87.9]],
-  },
-};
-
-const knownLocations: Record<string, [number, number]> = {
-  shanghai: [31.23, 121.47],
-  rotterdam: [51.95, 4.02],
-  singapore: [1.32, 103.65],
-  'los angeles': [33.74, -118.26],
-  hamburg: [53.55, 9.99],
-  busan: [35.10, 129.04],
-  taipei: [25.07, 121.23],
-  frankfurt: [50.03, 8.57],
-  chicago: [41.97, -87.9],
-  austin: [30.26, -97.74],
-  tokyo: [35.44, 139.64],
-  yokohama: [35.44, 139.64],
-  shenzhen: [22.58, 114.28],
-  'new york': [40.68, -74.15],
-  ningbo: [29.86, 121.54],
-};
-
-const resolveCoord = (name: string, fallbackSeed: string): [number, number] => {
-  const lower = (name || '').toLowerCase();
-  for (const [key, coord] of Object.entries(knownLocations)) {
-    if (lower.includes(key)) return coord;
-  }
-  let hash = 0;
-  for (let i = 0; i < (fallbackSeed || 'seed').length; i++) {
-    hash = (hash << 5) - hash + fallbackSeed.charCodeAt(i);
-    hash |= 0;
-  }
-  const lat = 10 + Math.abs(hash % 45);
-  const lon = -140 + Math.abs((hash * 13) % 260);
-  return [lat, lon];
-};
-
-const getShipmentRoute = (shipment: Shipment): { current: [number, number]; waypoints: [number, number][] } => {
-  if (routeCoordinates[shipment.id]) {
-    return routeCoordinates[shipment.id];
-  }
-  const start = resolveCoord(shipment.origin, shipment.id + '_orig');
-  const end = resolveCoord(shipment.destination, shipment.id + '_dest');
-  const mid: [number, number] = [
-    (start[0] + end[0]) / 2 + 5,
-    (start[1] + end[1]) / 2,
-  ];
-  return {
-    current: mid,
-    waypoints: [start, mid, end],
-  };
-};
-
-interface GeoFleetMapProps {
-  onNavigate: (pageId: string) => void;
+function WorldOutline({ light }: { light: boolean }) {
+  const [land, setLand] = useState<GeoJsonObject | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${import.meta.env.BASE_URL}world-land.geojson`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then(setLand).catch(() => { /* Online tiles remain available if the local outline fails. */ });
+    return () => controller.abort();
+  }, []);
+  return <Pane name="world-outline" style={{ zIndex: 150, pointerEvents: 'none' }}>
+    {land && [-360, 0, 360].map((shift) => <GeoJSON key={shift} data={land} interactive={false}
+      coordsToLatLng={([lng, lat]) => L.latLng(lat, lng + shift)}
+      style={{ color: light ? '#94a3b8' : '#334a62', fillColor: light ? '#cbd5e1' : '#182b40', fillOpacity: 1, weight: .8 }}
+      attribution='World outline: <a href="https://www.naturalearthdata.com/">Natural Earth</a>' />)}
+  </Pane>;
 }
 
-export const GeoFleetMap: React.FC<GeoFleetMapProps> = ({ onNavigate }) => {
+function MapViewport({ points, reset }: { points: Coordinate[]; reset: number }) {
+  const map = useMap();
+  useEffect(() => {
+    const fit = () => {
+      map.invalidateSize();
+      if (points.length) map.fitBounds(L.latLngBounds(points), { padding: [Math.min(80, map.getSize().x * .14), 70], maxZoom: 7, animate: false });
+      else map.setView([24, 35], 2, { animate: false });
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map, points, reset]);
+  return null;
+}
+
+function ShipmentDetails({ shipment, schematic }: { shipment: Shipment; schematic: boolean }) {
+  return <div className="fleet-popup">
+    <strong>{shipment.id}</strong><span style={{ color: routeColor(shipment) }}>{statusLabel(shipment)}</span>
+    <h3>{shipment.origin} → {shipment.destination}</h3>
+    <dl><dt>Carrier</dt><dd>{shipment.carrier || 'Not available'}</dd>
+      <dt>Transport</dt><dd>{modeNames[shipment.mode] || shipment.mode}</dd>
+      <dt>Cargo</dt><dd>{shipment.cargoDescription || 'Not available'}</dd>
+      <dt>ETA</dt><dd>{formatEta(shipment.eta)}</dd>
+      {shipment.vesselName && <><dt>Vessel / flight</dt><dd>{shipment.vesselName}</dd></>}
+      {shipment.speedKnots != null && <><dt>Reported speed</dt><dd>{shipment.speedKnots} kn</dd></>}
+    </dl>
+    <p>{schematic ? 'Schematic connection; actual travel path may differ.' : 'Route geometry supplied with this shipment.'}</p>
+    {shipment.rerouteRecommendation && <p className="fleet-advisory">{shipment.rerouteRecommendation}</p>}
+  </div>;
+}
+
+function RouteLayer({ route, selected, dimmed, labels, onSelect, shift = 0 }: {
+  route: ShipmentRoute; selected: boolean; dimmed: boolean; labels: boolean; onSelect: () => void; shift?: number;
+}) {
+  const { shipment } = route;
+  const color = routeColor(shipment);
+  const points = useMemo(() => route.points.map(([lat, lng]): Coordinate => [lat, lng + shift]), [route.points, shift]);
+  const middle = Math.floor(points.length / 2);
+  const from = points[Math.max(0, middle - 1)];
+  const to = points[Math.min(points.length - 1, middle + 1)];
+  const angle = Math.atan2(-(to[0] - from[0]), (to[1] - from[1]) * Math.cos(from[0] * Math.PI / 180)) * 180 / Math.PI;
+  const arrow = useMemo(() => L.divIcon({
+    className: 'fleet-direction-marker', iconSize: [24, 24], iconAnchor: [12, 12],
+    html: `<span style="color:${color};transform:rotate(${angle}deg)">➤</span>`,
+  }), [color, angle]);
+  const tooltip = <><strong>{shipment.id}</strong> · {shipment.origin} → {shipment.destination}<br />{statusLabel(shipment)} · Click to focus</>;
+  return <>
+    <Polyline positions={points} interactive={false} pathOptions={{ color: '#020617', weight: selected ? 10 : 7, opacity: dimmed ? .2 : .85 }} />
+    <Polyline positions={points} pathOptions={{ color, weight: selected ? 4 : 3, opacity: dimmed ? .2 : .95, dashArray: shipment.status === 'rerouted' ? '10 9' : route.schematic ? '3 7' : undefined, lineCap: 'round' }} eventHandlers={{ click: onSelect }} />
+    <Polyline positions={points} pathOptions={{ color, weight: 18, opacity: 0 }} eventHandlers={{ click: onSelect }}>
+      <Tooltip sticky className="fleet-tooltip">{tooltip}</Tooltip>
+    </Polyline>
+    {[points[0], points[points.length - 1]].map((position, i) => <CircleMarker key={i} center={position} radius={selected ? 7 : 5} pathOptions={{ color, weight: 2, fillColor: i === 0 ? '#0f172a' : color, fillOpacity: dimmed ? .3 : 1, opacity: dimmed ? .3 : 1 }} eventHandlers={{ click: onSelect }}>
+      {labels && (!dimmed || selected) && <Tooltip permanent direction="top" offset={[0, -8]} className="fleet-location-label">{i === 0 ? shipment.origin : shipment.destination}</Tooltip>}
+      <Popup><ShipmentDetails shipment={shipment} schematic={route.schematic} /></Popup>
+    </CircleMarker>)}
+    {!dimmed && <Marker position={points[middle]} icon={arrow} title={`Focus ${shipment.id}: ${shipment.origin} to ${shipment.destination}`} eventHandlers={{ click: onSelect }}>
+      <Tooltip className="fleet-tooltip">{tooltip}</Tooltip>
+    </Marker>}
+    {route.current && <CircleMarker center={[route.current[0], route.current[1] + shift]} radius={8} pathOptions={{ color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 }} eventHandlers={{ click: onSelect }}>
+      <Tooltip className="fleet-tooltip">{shipment.id} · Reported position</Tooltip>
+      <Popup><ShipmentDetails shipment={shipment} schematic={route.schematic} /></Popup>
+    </CircleMarker>}
+  </>;
+}
+
+export function GeoFleetMap({ onNavigate }: { onNavigate: (pageId: string) => void }) {
   const { shipments, ports } = useSupplyChain();
-  const [activeFilter, setActiveFilter] = useState<'all' | 'ocean' | 'air' | 'warning'>('all');
-  const [, setSelectedShipment] = useState<Shipment | null>(null);
-
-  const filteredShipments = shipments.filter((s) => {
-    if (activeFilter === 'ocean') return s.mode === 'ocean';
-    if (activeFilter === 'air') return s.mode === 'air';
-    if (activeFilter === 'warning') return s.status === 'delayed' || s.status === 'rerouted';
-    return true;
-  });
-
-  const filterOptions = [
-    { id: 'all' as const, label: `All Fleet (${shipments.length})`, icon: Globe2 },
-    { id: 'ocean' as const, label: 'Ocean Freight', icon: Ship },
-    { id: 'air' as const, label: 'Air Express', icon: Plane },
-    { id: 'warning' as const, label: 'Disrupted / Rerouted', icon: AlertTriangle },
+  const [filter, setFilter] = useState<FleetFilter>('all');
+  const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [labels, setLabels] = useState(true);
+  const [lightMap, setLightMap] = useState(false);
+  const [reset, setReset] = useState(0);
+  const [tileError, setTileError] = useState(false);
+  const [tileAttempt, setTileAttempt] = useState(0);
+  const [showDetailedMap, setShowDetailedMap] = useState(true);
+  const mapped = useMemo(() => shipments.map((shipment) => ({ shipment, route: getShipmentRoute(shipment, ports) })), [shipments, ports]);
+  const visible = useMemo(() => mapped.filter(({ shipment }) => {
+    const matchesMode = filter === 'all' || (filter === 'attention' ? needsAttention(shipment) : filter === 'land' ? ['ground', 'rail'].includes(shipment.mode) : shipment.mode === filter);
+    return matchesMode && `${shipment.id} ${shipment.origin} ${shipment.destination} ${shipment.carrier}`.toLowerCase().includes(search.trim().toLowerCase());
+  }), [mapped, filter, search]);
+  const routes = useMemo(() => visible.flatMap(({ route }) => route ? [route] : []), [visible]);
+  const selected = visible.find(({ shipment }) => shipment.id === selectedId);
+  const selectedRoute = selected?.route;
+  const fitPoints = useMemo(() => selectedRoute ? selectedRoute.points : routes.flatMap((route) => route.points), [routes, selectedRoute]);
+  const hubs = useMemo(() => new Set(routes.flatMap(({ points }) => [points[0], points[points.length - 1]]
+    .map(([lat, lng]) => `${lat.toFixed(4)},${(((lng + 180) % 360 + 360) % 360 - 180).toFixed(4)}`))).size, [routes]);
+  const attention = visible.filter(({ shipment }) => needsAttention(shipment)).length;
+  const filters: { id: FleetFilter; label: string; icon: typeof Globe2 }[] = [
+    { id: 'all', label: 'All fleet', icon: Globe2 }, { id: 'ocean', label: 'Ocean', icon: Ship },
+    { id: 'air', label: 'Air', icon: Plane }, { id: 'land', label: 'Ground & rail', icon: Truck },
+    { id: 'attention', label: 'Needs attention', icon: AlertTriangle },
   ];
-
-  return (
-    <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl sm:text-2xl font-bold text-white font-display tracking-tight">
-              Global Fleet & Geo Logistics Map
-            </h2>
-            <NeonBadge variant="cyan" size="sm">
-              AIS SATELLITE LIVE
-            </NeonBadge>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time tracking of maritime container vessels, air cargo routes, port congestion, and meteorological choke points.
-          </p>
-        </div>
-
-        {/* Filter Controls */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/80 border border-white/10 overflow-x-auto">
-          {filterOptions.map((filter) => {
-            const Icon = filter.icon;
-            return (
-              <button
-                key={filter.id}
-                onClick={() => {
-                  soundFX.playClick();
-                  setActiveFilter(filter.id);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 cursor-pointer ${
-                  activeFilter === filter.id
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{filter.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Map Container */}
-      <div className="relative rounded-2xl glass-panel border border-white/10 overflow-hidden h-[620px]">
-        <MapContainer
-          center={[22.0, 110.0]}
-          zoom={3}
-          minZoom={2}
-          maxZoom={12}
-          scrollWheelZoom={true}
-          style={{ height: '100%', width: '100%', backgroundColor: '#050816' }}
-        >
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          />
-
-          {/* Port Hub Markers */}
-          {ports.map((port) => (
-            <Marker key={port.id} position={port.coordinates} icon={portIcon}>
-              <Popup className="custom-leaflet-popup">
-                <div className="p-2 space-y-1.5 text-slate-100">
-                  <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-1">
-                    <span className="font-bold text-xs text-cyan-400">{port.name}</span>
-                    <NeonBadge variant={port.status} size="sm">
-                      {port.status}
-                    </NeonBadge>
-                  </div>
-                  <p className="text-[11px] text-slate-300">
-                    Country: <span className="text-white">{port.country}</span>
-                  </p>
-                  <p className="text-[11px] text-slate-300">
-                    Berth Waiting Time: <span className="font-mono font-semibold text-amber-300">{port.waitTimeDays} days</span>
-                  </p>
-                  <p className="text-[11px] text-slate-300">
-                    Congestion Index: <span className="font-mono text-white">{port.congestionIndex}%</span>
-                  </p>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-
-          {/* Shipment Waypoint Polylines & Markers */}
-          {filteredShipments.map((shipment) => {
-            const route = getShipmentRoute(shipment);
-
-            return (
-              <React.Fragment key={`route-${shipment.id}`}>
-                <Polyline
-                  positions={route.waypoints}
-                  pathOptions={{
-                    color: shipment.status === 'delayed' || shipment.status === 'rerouted' ? '#F59E0B' : '#3B82F6',
-                    weight: 2.5,
-                    dashArray: shipment.status === 'rerouted' ? '6, 6' : undefined,
-                    opacity: 0.7,
-                  }}
-                />
-
-                <Marker
-                  position={route.current}
-                  icon={
-                    shipment.mode === 'air'
-                      ? planeIcon
-                      : shipment.status === 'delayed'
-                      ? shipIconWarning
-                      : shipIconNormal
-                  }
-                  eventHandlers={{
-                    click: () => {
-                      soundFX.playClick();
-                      setSelectedShipment(shipment);
-                    },
-                  }}
-                >
-                  <Popup className="custom-leaflet-popup">
-                    <div className="p-2.5 space-y-2 text-slate-100 min-w-[240px]">
-                      <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-                        <div>
-                          <h4 className="font-bold text-xs text-white">{shipment.carrier}</h4>
-                          <p className="text-[10px] text-slate-400 font-mono-telemetry">{shipment.vesselName || shipment.id}</p>
-                        </div>
-                        <NeonBadge variant={shipment.status === 'delayed' ? 'warning' : 'optimal'} size="sm">
-                          {shipment.status.toUpperCase()}
-                        </NeonBadge>
-                      </div>
-
-                      <div className="space-y-1 text-[11px] font-mono-telemetry text-slate-300">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Origin &rarr; Dest:</span>
-                          <span className="font-semibold text-white truncate max-w-[140px]">
-                            {shipment.origin} &rarr; {shipment.destination}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Cargo Payload:</span>
-                          <span className="text-cyan-300 truncate max-w-[140px]">{shipment.cargoDescription}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Speed / ETA:</span>
-                          <span className="text-emerald-400">{shipment.speedKnots || 20} kn | {shipment.eta}</span>
-                        </div>
-                      </div>
-
-                      {shipment.rerouteRecommendation && (
-                        <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-200">
-                          ⚠️ {shipment.rerouteRecommendation}
-                        </div>
-                      )}
-                    </div>
-                  </Popup>
-                </Marker>
-              </React.Fragment>
-            );
-          })}
-        </MapContainer>
-
-        {/* Live Weather Warning Overlay */}
-        <div className="absolute top-4 right-4 z-[400] max-w-sm rounded-xl glass-dropdown border border-rose-500/40 p-3.5 shadow-2xl space-y-2">
-          <div className="flex items-center gap-2 text-rose-400 text-xs font-semibold">
-            <AlertTriangle className="w-4 h-4 animate-bounce" />
-            <span>METEOROLOGICAL CHOKE POINT ALERT</span>
-          </div>
-          <p className="text-[11px] text-slate-300 leading-relaxed">
-            Super Typhoon Gaemi (Category 4) in Taiwan Strait / East China Sea. 14 container vessels rerouted via Luzon Strait.
-          </p>
-          <div className="flex items-center justify-between pt-1 text-[10px]">
-            <span className="text-slate-400">Avg Maritime Delay: +3.8 Days</span>
-            <button
-              onClick={() => {
-                soundFX.playClick();
-                onNavigate('recommendations');
-              }}
-              className="text-cyan-400 hover:text-cyan-300 font-semibold underline cursor-pointer"
-            >
-              Optimize Logistics &rarr;
-            </button>
-          </div>
-        </div>
-      </div>
+  const clearFilters = () => { setFilter('all'); setSearch(''); setSelectedId(null); };
+  return <section className="fleet-view" aria-label="Fleet and Geo Logistics">
+    <header className="fleet-heading"><div><div className="fleet-eyebrow"><span /> GLOBAL OPERATIONS</div>
+      <h2>Fleet & Geo Logistics</h2><p>Your shipment network, connected. Select a route to explore its journey.</p></div>
+      <button className="fleet-button" onClick={() => onNavigate('shipments')}>Shipment ledger <ArrowRight size={15} /></button>
+    </header>
+    <div className="fleet-metrics">
+      {[{ label: 'Visible shipments', value: visible.length, icon: Ship, color: '#38bdf8' }, { label: 'Mapped connections', value: routes.length, icon: Globe2, color: '#34d399' }, { label: 'Connected locations', value: hubs, icon: MapPin, color: '#c4b5fd' }, { label: 'Needs attention', value: attention, icon: AlertTriangle, color: '#fbbf24' }].map(({ label, value, icon: Icon, color }) =>
+        <div className="fleet-metric" key={label}><span className="fleet-metric-icon" style={{ color }}><Icon size={19} /></span><div><span>{label}</span><strong>{value.toString().padStart(2, '0')}</strong></div></div>)}
     </div>
-  );
-};
+    <div className="fleet-workspace">
+      <div className="fleet-toolbar"><div className="fleet-filters" aria-label="Filter shipments">{filters.map(({ id, label, icon: Icon }) =>
+        <button key={id} aria-pressed={filter === id} onClick={() => { setFilter(id); setSelectedId(null); }}><Icon size={15} />{label}</button>)}</div>
+        <label className="fleet-search"><Search size={16} /><input aria-label="Search shipment routes" placeholder="Search route, city or carrier…" value={search} onChange={(event) => { setSearch(event.target.value); setSelectedId(null); }} />{search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={14} /></button>}</label>
+      </div>
+      <div className="fleet-map-layout">
+        <div className={`fleet-map-area ${lightMap ? 'fleet-map-light' : ''}`}>
+          <div className="fleet-map-actions"><button className="fleet-button" onClick={() => { setSelectedId(null); setReset((value) => value + 1); }}><LocateFixed size={15} />Fit routes</button>
+            <button className="fleet-button" aria-pressed={lightMap} onClick={() => setLightMap((value) => !value)}><Layers size={15} />{lightMap ? 'Dark map' : 'Light map'}</button>
+            <button className="fleet-button" onClick={() => {
+              if (tileError || !showDetailedMap) { setTileError(false); setShowDetailedMap(true); setTileAttempt((value) => value + 1); }
+              else setShowDetailedMap(false);
+            }}><Globe2 size={15} />{showDetailedMap && !tileError ? 'World outline' : 'Detailed map'}</button>
+            <button className="fleet-button" aria-pressed={labels} onClick={() => setLabels((value) => !value)}><MapPin size={15} />Labels {labels ? 'on' : 'off'}</button>
+          </div>
+          <MapContainer center={[24, 35]} zoom={2} minZoom={0} maxZoom={16} zoomSnap={.25} zoomDelta={.5} zoomControl={false} scrollWheelZoom={false} worldCopyJump className="fleet-leaflet-map">
+            <WorldOutline light={lightMap} />
+            {showDetailedMap && !tileError && <TileLayer key={tileAttempt}
+              className="fleet-basemap-tiles"
+              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              eventHandlers={{ tileerror: () => setTileError(true) }} />}
+            <ZoomControl position="bottomright" /><ScaleControl position="bottomleft" imperial={false} />
+            <MapViewport points={fitPoints} reset={reset} />
+            {[-360, 0, 360].map((shift) => <Fragment key={shift}>
+              {ports.filter((port) => validCoordinate(port.coordinates)).map((port) => <CircleMarker key={port.id} center={[port.coordinates[0], port.coordinates[1] + shift]} radius={4} pathOptions={{ color: '#94a3b8', fillColor: '#0f172a', fillOpacity: 1, weight: 2 }}>
+                <Tooltip className="fleet-tooltip">{port.name} · Port hub</Tooltip><Popup><div className="fleet-popup"><strong>{port.name}</strong><h3>{port.country}</h3><dl><dt>Status</dt><dd>{port.status}</dd><dt>Berth wait</dt><dd>{port.waitTimeDays} days</dd><dt>Congestion</dt><dd>{port.congestionIndex}%</dd></dl></div></Popup>
+              </CircleMarker>)}
+              {[...routes].sort((a, b) => Number(a.shipment.id === selectedId) - Number(b.shipment.id === selectedId)).map((route) => <RouteLayer key={route.shipment.id} route={route} shift={shift} selected={route.shipment.id === selectedId} dimmed={!!selectedRoute && route.shipment.id !== selectedId} labels={labels} onSelect={() => setSelectedId(route.shipment.id)} />)}
+            </Fragment>)}
+          </MapContainer>
+          {tileError && <div className="fleet-map-notice" role="status">Detailed tiles unavailable. Showing the bundled world outline. <button onClick={() => { setTileError(false); setTileAttempt((value) => value + 1); }}>Retry tiles</button></div>}
+          {!routes.length && <div className="fleet-map-empty"><Globe2 size={30} /><strong>{visible.length ? 'Location details needed' : 'No matching routes'}</strong><p>{visible.length ? 'Add origin and destination coordinates or recognizable city names to map these shipments.' : 'Try another filter or search to explore your network.'}</p><button className="fleet-button" onClick={clearFilters}>Reset filters</button></div>}
+        </div>
+        <aside className="fleet-route-panel" aria-label="Shipment routes"><div className="fleet-panel-heading"><div><span className="fleet-eyebrow">ROUTE EXPLORER</span><h3>{selected ? 'Journey details' : 'Network connections'}</h3></div><span className="fleet-count">{visible.length}</span></div>
+          {selected && <div className="fleet-selected"><button className="fleet-back" onClick={() => setSelectedId(null)}>← All connections</button><ShipmentDetails shipment={selected.shipment} schematic={selected.route?.schematic ?? true} />{!selected.route && <p className="fleet-advisory">Location not mapped. Supply city names or coordinates for both endpoints.</p>}</div>}
+          <div className="fleet-route-list">{visible.map(({ shipment, route }) => {
+            const Icon = modeIcons[shipment.mode] || Truck;
+            return <button key={shipment.id} className={`fleet-route-card ${selectedId === shipment.id ? 'is-selected' : ''}`} aria-pressed={selectedId === shipment.id} onClick={() => setSelectedId(shipment.id)}>
+              <div className="fleet-card-top"><span><Icon size={15} />{shipment.id}</span><span style={{ color: routeColor(shipment) }}>{statusLabel(shipment)}</span></div>
+              <div className="fleet-journey"><span className="fleet-stop origin" /><span>{shipment.origin || 'Unknown origin'}</span><span className="fleet-journey-line" /><span className="fleet-stop destination" /><span>{shipment.destination || 'Unknown destination'}</span></div>
+              <div className="fleet-card-bottom"><span>{modeNames[shipment.mode] || shipment.mode} · {shipment.carrier || 'Carrier unavailable'}</span><ArrowRight size={14} /></div>
+              {!route && <span className="fleet-unmapped"><AlertTriangle size={12} />Location not mapped</span>}
+            </button>;
+          })}{!visible.length && <div className="fleet-list-empty">No shipments match your filters.<button className="fleet-back" onClick={clearFilters}>Clear filters</button></div>}</div>
+          {attention > 0 && <button className="fleet-attention" onClick={() => onNavigate('recommendations')}><AlertTriangle size={16} /><span>{attention} shipment{attention === 1 ? '' : 's'} need attention<br /><strong>Explore recommendations →</strong></span></button>}
+        </aside>
+      </div>
+      <footer className="fleet-legend"><div><span><i style={{ background: '#38bdf8' }} />Ocean</span><span><i style={{ background: '#c4b5fd' }} />Air</span><span><i style={{ background: '#34d399' }} />Ground / rail</span><span><i style={{ background: '#fbbf24' }} />Delayed / rerouted</span><span><i style={{ background: '#fb7185' }} />Critical</span></div><p>○ Origin → ● Destination · Dotted lines: schematic connections</p></footer>
+    </div>
+    <p className="fleet-footnote">Showing shipment records available in SynChain. Connections without supplied waypoints are schematic, not navigation paths. Position markers appear only when coordinates are supplied.{visible.length > routes.length && ` ${visible.length - routes.length} shipment(s) need location details before they can be mapped.`}</p>
+  </section>;
+}

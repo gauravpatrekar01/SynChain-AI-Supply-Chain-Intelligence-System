@@ -166,6 +166,10 @@ export interface Shipment {
   status: 'optimal' | 'delayed' | 'rerouted' | 'critical';
   vesselName?: string;
   rerouteRecommendation?: string;
+  originCoords?: GeoCoordinate;
+  destCoords?: GeoCoordinate;
+  currentCoords?: GeoCoordinate;
+  routeWaypoints?: [number, number][];
 }
 
 export interface PortNode {

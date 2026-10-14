@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Network,
@@ -37,7 +37,15 @@ interface NavSection {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => {
-  const [collapsed, setCollapsed] = useState(false);
+  const [manuallyCollapsed, setCollapsed] = useState(false);
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  const collapsed = compact || manuallyCollapsed;
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const onChange = () => setCompact(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
   const { unreadAlertsCount, isRealDataConnected, digitalTwinNodes } = useSupplyChain();
 
   const navSections: NavSection[] = [
@@ -90,8 +98,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       }`}
     >
       {/* Brand Header */}
-      <div className="h-16 px-4 flex items-center justify-between border-b border-white/10">
-        <div className="flex items-center gap-3 min-w-0 overflow-hidden cursor-pointer" onClick={() => handleItemClick('dashboard')}>
+      <div className={`h-16 px-4 flex items-center ${collapsed ? 'justify-center' : 'justify-between'} border-b border-white/10`}>
+        <div className={`${manuallyCollapsed && !compact ? 'hidden' : 'flex'} items-center gap-3 min-w-0 overflow-hidden cursor-pointer`} onClick={() => handleItemClick('dashboard')}>
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 shrink-0 border border-white/20">
             <Network className="w-5 h-5" />
           </div>
@@ -109,11 +117,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
 
         {/* Toggle Collapse Button */}
         <button
+          aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
           onClick={() => {
             soundFX.playClick();
             setCollapsed(!collapsed);
           }}
-          className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+          className={`${compact ? 'hidden' : ''} p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer`}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
@@ -137,6 +146,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
                   key={item.id}
                   onClick={() => handleItemClick(item.id)}
                   title={collapsed ? item.label : undefined}
+                  aria-label={item.label}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all group cursor-pointer ${
                     isActive
                       ? 'bg-gradient-to-r from-blue-600/30 to-indigo-600/10 text-white border border-blue-500/50 shadow-md shadow-blue-500/10'
