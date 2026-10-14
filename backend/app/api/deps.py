@@ -56,3 +56,31 @@ def get_current_active_user(
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl=f"/api/v1/auth/login", auto_error=False)
+
+
+def get_optional_current_user(
+    db: Session = Depends(get_db), token: str = Depends(oauth2_scheme_optional)
+) -> User | None:
+    if not token:
+        return None
+    try:
+        payload = verify_token(token)
+        if not payload:
+            return None
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        import uuid
+        try:
+            val_uuid = uuid.UUID(str(user_id))
+            user = db.query(User).filter(User.id == val_uuid).first()
+        except (ValueError, AttributeError):
+            user = db.query(User).filter(User.email == str(user_id)).first()
+        if user and user.is_active:
+            return user
+        return None
+    except Exception:
+        return None

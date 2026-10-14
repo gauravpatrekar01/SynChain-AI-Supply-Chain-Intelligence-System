@@ -33,7 +33,7 @@ export const LiveShipmentsView: React.FC<LiveShipmentsViewProps> = ({ onNavigate
               Live Fleet Transit & Shipments Ledger
             </h2>
             <NeonBadge variant="cyan" size="sm">
-              1,280 IN TRANSIT
+              {shipments.length} IN TRANSIT
             </NeonBadge>
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
@@ -74,8 +74,13 @@ export const LiveShipmentsView: React.FC<LiveShipmentsViewProps> = ({ onNavigate
       </div>
 
       {/* Shipments List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filtered.map((s) => (
+      {filtered.length === 0 ? (
+        <div className="p-12 rounded-2xl glass-panel border border-white/10 text-center font-mono-telemetry text-slate-400">
+          No shipments found. Ingest shipment/order logistics in the Data Ingestion Hub to track live transit vessels.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filtered.map((s) => (
           <div
             key={s.id}
             className="p-5 rounded-2xl glass-panel border border-white/10 hover:border-blue-500/40 space-y-3 transition-all cursor-pointer"
@@ -124,6 +129,7 @@ export const LiveShipmentsView: React.FC<LiveShipmentsViewProps> = ({ onNavigate
           </div>
         ))}
       </div>
+    )}
     </div>
   );
 };

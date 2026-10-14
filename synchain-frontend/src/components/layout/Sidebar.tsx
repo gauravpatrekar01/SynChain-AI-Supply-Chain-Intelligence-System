@@ -38,7 +38,7 @@ interface NavSection {
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => {
   const [collapsed, setCollapsed] = useState(false);
-  const { unreadAlertsCount } = useSupplyChain();
+  const { unreadAlertsCount, isRealDataConnected, digitalTwinNodes } = useSupplyChain();
 
   const navSections: NavSection[] = [
     {
@@ -173,11 +173,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
         <div className="p-3 m-3 rounded-xl bg-slate-900/60 border border-white/5 text-[11px] space-y-1 font-mono-telemetry">
           <div className="flex items-center justify-between text-slate-400">
             <span>FastAPI Link</span>
-            <span className="text-emerald-400 font-semibold">Active (Mock)</span>
+            <span className={`font-semibold flex items-center gap-1.5 ${isRealDataConnected ? 'text-emerald-400' : 'text-amber-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isRealDataConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              {isRealDataConnected ? 'PostgreSQL Live' : 'Connecting...'}
+            </span>
           </div>
           <div className="flex items-center justify-between text-slate-400">
-            <span>Digital Twin Nodes</span>
-            <span className="text-blue-400">14 Synchronized</span>
+            <span>Digital Twin</span>
+            <span className="text-cyan-400 font-semibold">{digitalTwinNodes.length} Nodes Synced</span>
           </div>
         </div>
       )}

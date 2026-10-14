@@ -16,7 +16,20 @@ export const ForecastView: React.FC = () => {
   const slicedDemand = demandForecast.slice(0, forecastHorizon === 30 ? 4 : forecastHorizon === 60 ? 8 : forecastHorizon === 90 ? 12 : demandForecast.length);
 
   // Commodity chart option
-  const currentCommodityData = commodityPrices.find((c) => c.materialName === selectedCommodity) || commodityPrices[0];
+  const fallbackCommodity = {
+    materialName: 'Raw Materials Index',
+    currentPriceUsd: 100,
+    forecastPriceUsd: 105,
+    unit: 'index',
+    changePct30d: 5.0,
+    historicalDates: ['W1', 'W2', 'W3', 'W4'],
+    historicalPrices: [95, 98, 102, 100],
+  };
+  const currentCommodityData =
+    (commodityPrices && commodityPrices.find((c) => c.materialName === selectedCommodity)) ||
+    (commodityPrices && commodityPrices[0]) ||
+    fallbackCommodity;
+
   const commodityOption = {
     backgroundColor: 'transparent',
     tooltip: {
@@ -29,7 +42,7 @@ export const ForecastView: React.FC = () => {
     grid: { left: '3%', right: '3%', bottom: '4%', top: '16%', containLabel: true },
     xAxis: {
       type: 'category',
-      data: currentCommodityData.historicalDates,
+      data: currentCommodityData.historicalDates || [],
       axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } },
       axisLabel: { color: '#94a3b8', fontSize: 11 },
     },

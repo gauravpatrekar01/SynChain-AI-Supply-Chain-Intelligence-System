@@ -384,44 +384,94 @@ class IngestionService:
                 db.flush()
                 target_entity_id = product_obj.id
 
+            qty_val = canon_row.get("quantity") or raw_row.get("quantity") or raw_row.get("order_quantity")
+
             # 2. Supplier creation / update
             sup_name = canon_row.get("supplier")
             if sup_name:
                 supplier_obj = db.query(Supplier).filter(Supplier.name == str(sup_name)).first()
+                sup_country = canon_row.get("country") or raw_row.get("country") or raw_row.get("supplier_location") or "Global"
+                sup_tier = canon_row.get("tier") or raw_row.get("tier") or "Tier-1"
+                
+                # Calculate reliability
+                rel_val = canon_row.get("reliability_score") or raw_row.get("reliability_score") or raw_row.get("supplier_on_time_rate")
+                if rel_val is not None:
+                    try:
+                        rf = float(rel_val)
+                        if 0.0 < rf <= 1.0:
+                            rf *= 100.0
+                        sup_rel = Decimal(f"{rf:.2f}")
+                    except Exception:
+                        sup_rel = Decimal("88.0")
+                else:
+                    sup_rel = Decimal("88.0")
+
+                # Calculate annual spend
+                annual_spend_val = canon_row.get("spend_annual_usd") or raw_row.get("spend_annual_usd") or raw_row.get("annual_spend")
+                if annual_spend_val is not None:
+                    try:
+                        sup_spend = Decimal(str(annual_spend_val))
+                    except Exception:
+                        sup_spend = Decimal("500000.0")
+                else:
+                    item_qty = float(qty_val) if qty_val is not None else 100.0
+                    sup_spend = Decimal(str(float(price) * item_qty * 12.0))
+
+                # Single source / risk
+                risk_rating = str(raw_row.get("supplier_risk_rating") or raw_row.get("risk_rating") or "").lower()
+                single_source = bool(raw_row.get("single_source_risk") or risk_rating in ("high", "critical", "true", "1"))
+                health_st = "Critical" if float(sup_rel) < 65 else ("Warning" if float(sup_rel) < 80 else "Good")
+
                 if not supplier_obj:
                     supplier_obj = Supplier(
                         name=str(sup_name),
-                        tier="Tier-1",
+                        tier=str(sup_tier),
                         category=str(category),
-                        country="Unknown",
-                        reliability_score=Decimal("85.0"),
-                        spend_annual_usd=Decimal("0.0"),
-                        health_status="Good"
+                        country=str(sup_country),
+                        reliability_score=sup_rel,
+                        spend_annual_usd=sup_spend,
+                        health_status=health_st,
+                        single_source_risk=single_source
                     )
                     db.add(supplier_obj)
                     created_suppliers += 1
+                else:
+                    if sup_country and sup_country != "Unknown":
+                        supplier_obj.country = str(sup_country)
+                    if sup_tier:
+                        supplier_obj.tier = str(sup_tier)
+                    if sup_rel:
+                        supplier_obj.reliability_score = sup_rel
+                    if sup_spend > 0:
+                        supplier_obj.spend_annual_usd = sup_spend
+                    supplier_obj.health_status = health_st
+                    supplier_obj.single_source_risk = single_source
                 db.flush()
                 if not target_entity_id:
                     target_entity_id = supplier_obj.id
 
             # 3. Warehouse creation / update
-            wh_name = canon_row.get("source_location")
+            wh_name = canon_row.get("source_location") or raw_row.get("source_location") or raw_row.get("warehouse") or raw_row.get("destination")
             warehouse_obj = None
             if wh_name:
                 warehouse_obj = db.query(Warehouse).filter(Warehouse.name == str(wh_name)).first()
+                wh_country = canon_row.get("country") or raw_row.get("country") or "US"
                 if not warehouse_obj:
                     warehouse_obj = Warehouse(
                         name=str(wh_name),
                         location=str(wh_name),
-                        country="Unknown",
-                        capacity_units=10000
+                        country=str(wh_country),
+                        capacity_units=25000
                     )
                     db.add(warehouse_obj)
                     created_warehouses += 1
+                else:
+                    if wh_country and wh_country != "Unknown":
+                        warehouse_obj.country = str(wh_country)
                 db.flush()
 
             # 4. Inventory creation / update
-            qty_val = canon_row.get("quantity")
+            qty_val = canon_row.get("quantity") or raw_row.get("order_quantity")
             if product_obj and warehouse_obj and qty_val is not None:
                 try:
                     qty = int(float(qty_val))
@@ -429,35 +479,54 @@ class IngestionService:
                         Inventory.warehouse_id == warehouse_obj.id,
                         Inventory.product_id == product_obj.id
                     ).first()
+                    safety = max(50, int(qty * 0.25))
+                    reorder = max(100, int(qty * 0.40))
+                    reorder_qty = max(200, int(qty * 0.60))
                     if not inv_obj:
                         inv_obj = Inventory(
                             warehouse_id=warehouse_obj.id,
                             product_id=product_obj.id,
-                            stock_quantity=qty
+                            stock_quantity=qty,
+                            safety_stock_level=safety,
+                            reorder_level=reorder,
+                            reorder_quantity=reorder_qty
                         )
                         db.add(inv_obj)
                         created_inventory += 1
                     else:
                         inv_obj.stock_quantity = qty
+                        inv_obj.safety_stock_level = safety
+                        inv_obj.reorder_level = reorder
                     db.flush()
                 except Exception as e:
                     logger.warning(f"Could not record inventory for row {idx}: {str(e)}")
 
             # 5. Order creation / update
-            order_id = canon_row.get("order_id")
+            order_id = canon_row.get("order_id") or raw_row.get("order_id")
             if order_id:
-                order_date_str = canon_row.get("order_date")
+                order_date_str = canon_row.get("order_date") or raw_row.get("order_date")
                 order_date = datetime.now(timezone.utc)
                 if order_date_str:
                     try:
                         order_date = datetime.fromisoformat(order_date_str)
                     except Exception:
                         pass
+
+                shipping_mode = (
+                    canon_row.get("transport_mode")
+                    or raw_row.get("transport_mode")
+                    or raw_row.get("shipping_mode")
+                    or "ocean"
+                )
                 
+                order_status_val = canon_row.get("status") or raw_row.get("status") or "Processing"
+
                 order_obj = Order(
                     user_id=user_id,
-                    order_status=canon_row.get("status") or "Processing",
-                    order_date=order_date
+                    order_status=str(order_status_val),
+                    shipping_mode=str(shipping_mode).lower(),
+                    order_date=order_date,
+                    shipping_date=order_date + timedelta(days=7)
                 )
                 db.add(order_obj)
                 db.flush()

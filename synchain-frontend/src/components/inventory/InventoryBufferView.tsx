@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Package, AlertTriangle, CheckCircle, RefreshCw, Layers, ArrowUpRight } from 'lucide-react';
 import { NeonBadge } from '../common/NeonBadge';
 import { Button } from '../common/Button';
 import { soundFX } from '../../services/audioService';
+import { apiService } from '../../services/api';
 
 interface InventoryItem {
   sku: string;
@@ -16,64 +17,69 @@ interface InventoryItem {
   reorderTrigger: number;
 }
 
+const defaultItems: InventoryItem[] = [
+  {
+    sku: 'IC-3NM-A18',
+    name: '3nm Ultra AI Neural Processor',
+    category: 'Logic Silicon',
+    facility: 'Giga Austin Warehouse',
+    onHandUnits: 45000,
+    safetyStockUnits: 30000,
+    daysOfSupply: 42,
+    status: 'optimal',
+    reorderTrigger: 35000,
+  },
+  {
+    sku: 'HBM3E-24G',
+    name: 'High Bandwidth Memory 24GB',
+    category: 'Memory IC',
+    facility: 'Memphis SuperHub',
+    onHandUnits: 18500,
+    safetyStockUnits: 25000,
+    daysOfSupply: 14,
+    status: 'warning',
+    reorderTrigger: 28000,
+  },
+  {
+    sku: 'BATT-LFP-82K',
+    name: '82kWh LFP Battery Cell Modules',
+    category: 'Energy Storage',
+    facility: 'Munich Mega Assembly',
+    onHandUnits: 8200,
+    safetyStockUnits: 6000,
+    daysOfSupply: 38,
+    status: 'optimal',
+    reorderTrigger: 7500,
+  },
+];
+
 export const InventoryBufferView: React.FC = () => {
-  const [items] = useState<InventoryItem[]>([
-    {
-      sku: 'IC-3NM-A18',
-      name: '3nm Ultra AI Neural Processor',
-      category: 'Logic Silicon',
-      facility: 'Giga Austin Warehouse',
-      onHandUnits: 45000,
-      safetyStockUnits: 30000,
-      daysOfSupply: 42,
-      status: 'optimal',
-      reorderTrigger: 35000,
-    },
-    {
-      sku: 'HBM3E-24G',
-      name: 'High Bandwidth Memory 24GB',
-      category: 'Memory IC',
-      facility: 'Memphis SuperHub',
-      onHandUnits: 18500,
-      safetyStockUnits: 25000,
-      daysOfSupply: 14,
-      status: 'warning',
-      reorderTrigger: 28000,
-    },
-    {
-      sku: 'BATT-LFP-82K',
-      name: '82kWh LFP Battery Cell Modules',
-      category: 'Energy Storage',
-      facility: 'Munich Mega Assembly',
-      onHandUnits: 8200,
-      safetyStockUnits: 6000,
-      daysOfSupply: 38,
-      status: 'optimal',
-      reorderTrigger: 7500,
-    },
-    {
-      sku: 'HARN-LV-CU',
-      name: 'High Voltage Automotive Copper Harness',
-      category: 'Wiring & Connectors',
-      facility: 'Shanghai Distribution Hub',
-      onHandUnits: 4200,
-      safetyStockUnits: 9000,
-      daysOfSupply: 6,
-      status: 'critical',
-      reorderTrigger: 10000,
-    },
-    {
-      sku: 'SENS-LIDAR-V4',
-      name: 'Solid-State LiDAR Optical Transceiver',
-      category: 'Sensors',
-      facility: 'Giga Austin Warehouse',
-      onHandUnits: 22000,
-      safetyStockUnits: 15000,
-      daysOfSupply: 50,
-      status: 'optimal',
-      reorderTrigger: 18000,
-    },
-  ]);
+  const [items, setItems] = useState<InventoryItem[]>(defaultItems);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const loadInventory = async () => {
+    setIsLoading(true);
+    try {
+      const data = await apiService.getInventory();
+      if (data && data.items && data.items.length > 0) {
+        setItems(data.items);
+      }
+    } catch (e) {
+      console.error('Failed to load inventory levels', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInventory();
+
+    const handleSync = () => {
+      loadInventory();
+    };
+    window.addEventListener('synchain_data_imported', handleSync);
+    return () => window.removeEventListener('synchain_data_imported', handleSync);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -96,8 +102,12 @@ export const InventoryBufferView: React.FC = () => {
         <Button
           variant="glow"
           size="sm"
+          isLoading={isLoading}
           leftIcon={<RefreshCw className="w-3.5 h-3.5" />}
-          onClick={() => soundFX.playClick()}
+          onClick={() => {
+            soundFX.playClick();
+            loadInventory();
+          }}
         >
           Re-Calculate Multi-Echelon Buffer
         </Button>

@@ -30,12 +30,19 @@ import {
   ImportHistoryItem,
   CanonicalFieldMeta
 } from '../../types';
+import { useSupplyChain } from '../../context/SupplyChainContext';
 
-interface DataIngestionViewProps {
+export type Dataset = string;
+
+export interface DataIngestionViewProps {
   onNavigate?: (pageId: string) => void;
+  initialDataset?: Dataset;
+  moduleName?: string;
 }
 
-export const DataIngestionView: React.FC<DataIngestionViewProps> = ({ onNavigate }) => {
+export const DataIngestionView: React.FC<DataIngestionViewProps> = ({ onNavigate, initialDataset, moduleName }) => {
+  const { refreshData } = useSupplyChain();
+
   // Step state
   const [activeStep, setActiveStep] = useState<'upload' | 'inspect' | 'validated' | 'completed'>('upload');
   const [inspectTab, setInspectTab] = useState<'preview' | 'mapping' | 'validation'>('preview');
@@ -202,6 +209,14 @@ export const DataIngestionView: React.FC<DataIngestionViewProps> = ({ onNavigate
       setActiveStep('completed');
       soundFX.playSuccess();
       fetchHistory();
+
+      // Trigger instantaneous platform-wide refresh from live PostgreSQL
+      try {
+        await refreshData();
+      } catch (refreshErr) {
+        console.error('Real-time sync triggered with error:', refreshErr);
+      }
+      window.dispatchEvent(new CustomEvent('synchain_data_imported', { detail: res }));
     } catch (err: any) {
       soundFX.playError();
       setUploadStatus('error');
@@ -677,6 +692,16 @@ export const DataIngestionView: React.FC<DataIngestionViewProps> = ({ onNavigate
           <div className="p-3 rounded-xl bg-slate-900/90 border border-white/10 max-w-md mx-auto text-xs font-mono text-slate-400 flex items-center justify-between">
             <span>Source File: <span className="text-white">{importResult.filename}</span></span>
             <span>Source Type: <span className="text-cyan-400">{importResult.source_type}</span></span>
+          </div>
+
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 max-w-xl mx-auto flex items-center gap-3 text-left">
+            <Sparkles className="w-5 h-5 text-emerald-400 shrink-0 animate-pulse" />
+            <div className="text-xs">
+              <span className="font-semibold text-emerald-300">Live Database Sync Active:</span>
+              <span className="text-slate-300 ml-1">
+                All platform views (Dashboard, Digital Twin, Suppliers, Shipments, Inventories) are now reflecting this imported data in real-time.
+              </span>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-4">

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -79,8 +79,17 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
     }));
   }, [digitalTwinEdges]);
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  // Reactively sync nodes and edges whenever real-time database imports refresh
+  useEffect(() => {
+    setNodes(initialNodes);
+  }, [initialNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges(initialEdges);
+  }, [initialEdges, setEdges]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -124,11 +133,11 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
               Global Supply Chain Digital Twin
             </h2>
             <NeonBadge variant="blue" size="sm">
-              LIVE GRAPH
+              {digitalTwinNodes.length} NODES LIVE
             </NeonBadge>
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time topology model mapping 248 multi-tier entities, lead-time velocity, and material bottlenecks.
+            Real-time topology model mapping {digitalTwinNodes.length} multi-tier entities, lead-time velocity, and material bottlenecks.
           </p>
         </div>
 

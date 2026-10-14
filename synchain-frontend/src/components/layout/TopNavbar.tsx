@@ -11,6 +11,8 @@ import {
   Cpu,
   UserCheck,
   LogOut,
+  RefreshCw,
+  Database,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -31,6 +33,10 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
     unreadAlertsCount,
     setIsNotificationDrawerOpen,
     setIsCommandPaletteOpen,
+    isLoading,
+    isRealDataConnected,
+    lastRefreshedAt,
+    refreshData,
   } = useSupplyChain();
 
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -107,6 +113,31 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
           <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono-telemetry bg-black/40 text-slate-400 rounded border border-white/10">
             Ctrl+K
           </kbd>
+        </button>
+
+        {/* Live Database Sync Trigger */}
+        <button
+          onClick={async () => {
+            soundFX.playClick();
+            await refreshData();
+            soundFX.playSuccess();
+          }}
+          disabled={isLoading}
+          title={
+            lastRefreshedAt
+              ? `Live Database Synced at ${new Date(lastRefreshedAt).toLocaleTimeString()}. Click to force re-fetch.`
+              : 'Click to synchronize live database records'
+          }
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer text-xs font-mono-telemetry ${
+            isRealDataConnected
+              ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+              : 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-400'
+          }`}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-cyan-400' : ''}`} />
+          <span className="hidden xl:inline text-[11px] font-semibold">
+            {isRealDataConnected ? 'DB LIVE' : 'SYNCING'}
+          </span>
         </button>
 
         {/* Audio Toggle */}

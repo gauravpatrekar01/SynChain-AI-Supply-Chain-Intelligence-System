@@ -16,9 +16,9 @@ def get_mongo_client() -> MongoClient:
         if not url:
             raise ValueError("MONGODB_URL is not configured in settings or environment.")
         kwargs: Dict[str, Any] = {
-            "serverSelectionTimeoutMS": 5000,
-            "connectTimeoutMS": 5000,
-            "socketTimeoutMS": 10000,
+            "serverSelectionTimeoutMS": 500,
+            "connectTimeoutMS": 500,
+            "socketTimeoutMS": 2000,
             "retryWrites": True,
             "appname": "SynChain-AI",
         }

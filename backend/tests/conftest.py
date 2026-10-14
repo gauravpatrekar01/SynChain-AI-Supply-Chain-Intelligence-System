@@ -29,6 +29,7 @@ from app.models.postgres import models, observations
 from alembic.config import Config
 from alembic import command
 _config = Config("alembic.ini")
+_config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 command.upgrade(_config, "head")
 
 @pytest.fixture(autouse=True)

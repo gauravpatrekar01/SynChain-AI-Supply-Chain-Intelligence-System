@@ -49,6 +49,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     loadLiveDashboardData();
+
+    const handleImported = () => {
+      loadLiveDashboardData();
+    };
+    window.addEventListener('synchain_data_imported', handleImported);
+    return () => window.removeEventListener('synchain_data_imported', handleImported);
   }, []);
 
   const loadLiveDashboardData = async () => {

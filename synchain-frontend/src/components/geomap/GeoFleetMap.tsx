@@ -33,7 +33,7 @@ const shipIconWarning = createCustomIcon('#F59E0B', 'ship');
 const planeIcon = createCustomIcon('#8B5CF6', 'plane');
 const portIcon = createCustomIcon('#06B6D4', 'port');
 
-// Mock shipment coordinates lookup
+// Default route waypoints fallback lookup
 const routeCoordinates: Record<string, { current: [number, number]; waypoints: [number, number][] }> = {
   'SHP-9842': {
     current: [29.8, -160.4],
@@ -53,6 +53,55 @@ const routeCoordinates: Record<string, { current: [number, number]; waypoints: [
   },
 };
 
+const knownLocations: Record<string, [number, number]> = {
+  shanghai: [31.23, 121.47],
+  rotterdam: [51.95, 4.02],
+  singapore: [1.32, 103.65],
+  'los angeles': [33.74, -118.26],
+  hamburg: [53.55, 9.99],
+  busan: [35.10, 129.04],
+  taipei: [25.07, 121.23],
+  frankfurt: [50.03, 8.57],
+  chicago: [41.97, -87.9],
+  austin: [30.26, -97.74],
+  tokyo: [35.44, 139.64],
+  yokohama: [35.44, 139.64],
+  shenzhen: [22.58, 114.28],
+  'new york': [40.68, -74.15],
+  ningbo: [29.86, 121.54],
+};
+
+const resolveCoord = (name: string, fallbackSeed: string): [number, number] => {
+  const lower = (name || '').toLowerCase();
+  for (const [key, coord] of Object.entries(knownLocations)) {
+    if (lower.includes(key)) return coord;
+  }
+  let hash = 0;
+  for (let i = 0; i < (fallbackSeed || 'seed').length; i++) {
+    hash = (hash << 5) - hash + fallbackSeed.charCodeAt(i);
+    hash |= 0;
+  }
+  const lat = 10 + Math.abs(hash % 45);
+  const lon = -140 + Math.abs((hash * 13) % 260);
+  return [lat, lon];
+};
+
+const getShipmentRoute = (shipment: Shipment): { current: [number, number]; waypoints: [number, number][] } => {
+  if (routeCoordinates[shipment.id]) {
+    return routeCoordinates[shipment.id];
+  }
+  const start = resolveCoord(shipment.origin, shipment.id + '_orig');
+  const end = resolveCoord(shipment.destination, shipment.id + '_dest');
+  const mid: [number, number] = [
+    (start[0] + end[0]) / 2 + 5,
+    (start[1] + end[1]) / 2,
+  ];
+  return {
+    current: mid,
+    waypoints: [start, mid, end],
+  };
+};
+
 interface GeoFleetMapProps {
   onNavigate: (pageId: string) => void;
 }
@@ -70,7 +119,7 @@ export const GeoFleetMap: React.FC<GeoFleetMapProps> = ({ onNavigate }) => {
   });
 
   const filterOptions = [
-    { id: 'all' as const, label: 'All Fleet (1,280)', icon: Globe2 },
+    { id: 'all' as const, label: `All Fleet (${shipments.length})`, icon: Globe2 },
     { id: 'ocean' as const, label: 'Ocean Freight', icon: Ship },
     { id: 'air' as const, label: 'Air Express', icon: Plane },
     { id: 'warning' as const, label: 'Disrupted / Rerouted', icon: AlertTriangle },
@@ -161,10 +210,7 @@ export const GeoFleetMap: React.FC<GeoFleetMapProps> = ({ onNavigate }) => {
 
           {/* Shipment Waypoint Polylines & Markers */}
           {filteredShipments.map((shipment) => {
-            const route = routeCoordinates[shipment.id] || {
-              current: [30.0, 120.0] as [number, number],
-              waypoints: [[30.0, 120.0] as [number, number], [32.0, 130.0] as [number, number]],
-            };
+            const route = getShipmentRoute(shipment);
 
             return (
               <React.Fragment key={`route-${shipment.id}`}>

@@ -40,7 +40,7 @@ export const SupplierRegistryView: React.FC = () => {
               Supplier & Multi-Tier Partner Registry
             </h2>
             <NeonBadge variant="blue" size="sm">
-              248 CONNECTED
+              {suppliers.length} REGISTERED
             </NeonBadge>
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
@@ -97,7 +97,14 @@ export const SupplierRegistryView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filteredSuppliers.map((supplier) => (
+              {filteredSuppliers.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-slate-400 font-mono-telemetry">
+                    No suppliers found. Ingest CSV or Excel files in the Data Ingestion Hub to register real suppliers.
+                  </td>
+                </tr>
+              ) : (
+                filteredSuppliers.map((supplier) => (
                 <tr
                   key={supplier.id}
                   className="hover:bg-blue-600/10 transition-colors group cursor-pointer"
@@ -162,7 +169,7 @@ export const SupplierRegistryView: React.FC = () => {
                     </button>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>

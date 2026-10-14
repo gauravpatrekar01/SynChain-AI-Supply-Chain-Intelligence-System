@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   ShieldAlert,
@@ -21,10 +21,16 @@ interface RiskMatrixViewProps {
 }
 
 export const RiskMatrixView: React.FC<RiskMatrixViewProps> = ({ onNavigate }) => {
-  const { risks, incidents } = useSupplyChain();
+  const { risks, incidents, digitalTwinNodes } = useSupplyChain();
   const [selectedRisk, setSelectedRisk] = useState<RiskItem | null>(risks[0] || null);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (!selectedRisk && risks.length > 0) {
+      setSelectedRisk(risks[0]);
+    }
+  }, [risks, selectedRisk]);
 
   // 5x5 Matrix coordinates (Prob: 5 to 1, Sev: 1 to 5)
   const probabilityLabels = ['5 - Almost Certain', '4 - Likely', '3 - Possible', '2 - Unlikely', '1 - Rare'];
@@ -57,11 +63,11 @@ export const RiskMatrixView: React.FC<RiskMatrixViewProps> = ({ onNavigate }) =>
               5x5 Supply Chain Risk Matrix & Vulnerability Radar
             </h2>
             <NeonBadge variant="high" size="sm">
-              ACTIVE RADAR
+              {risks.length} RISKS ACTIVE
             </NeonBadge>
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Dynamic probability vs impact assessment mapped across 248 global supply nodes.
+            Dynamic probability vs impact assessment mapped across {digitalTwinNodes.length} global supply nodes.
           </p>
         </div>
 

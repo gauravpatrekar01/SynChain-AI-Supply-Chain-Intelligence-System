@@ -12,7 +12,7 @@ interface HeroSectionProps {
 
 export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
   const { user } = useAuth();
-  const { health } = useSupplyChain();
+  const { health, suppliers, shipments } = useSupplyChain();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -39,7 +39,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
           </h1>
 
           <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">
-            SynChain AI is continuously analyzing <span className="text-white font-semibold">248 global supplier nodes</span>, <span className="text-white font-semibold">1,280 active shipments</span>, and multi-modal meteorological telemetry. Global network operations are <span className="text-emerald-400 font-semibold">96.8% Nominal</span>.
+            SynChain AI is continuously analyzing <span className="text-white font-semibold">{suppliers.length} global supplier nodes</span>, <span className="text-white font-semibold">{shipments.length} active shipments</span>, and multi-modal meteorological telemetry. Global network operations are <span className="text-emerald-400 font-semibold">{health.score}% Nominal</span>.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-3">

@@ -16,7 +16,7 @@ import { NeonBadge } from '../common/NeonBadge';
 import { soundFX } from '../../services/audioService';
 
 export const ReportsView: React.FC = () => {
-  const { health, currentSimulationResult, risks } = useSupplyChain();
+  const { health, currentSimulationResult, risks, suppliers } = useSupplyChain();
   const [reportType, setReportType] = useState<'executive' | 'risk_audit' | 'supplier_esg'>('executive');
   const [isExporting, setIsExporting] = useState(false);
 
@@ -36,7 +36,7 @@ export const ReportsView: React.FC = () => {
 
   const handleExportCSV = () => {
     soundFX.playSuccess();
-    // Generate simple mock CSV download
+    // Generate live CSV export from ingested risk matrix dataset
     const csvContent =
       'data:text/csv;charset=utf-8,Risk_ID,Title,Probability,Severity,Exposure_USD\n' +
       risks.map((r) => `"${r.id}","${r.title}",${r.probability},${r.severityScore},${r.financialImpactUsd}`).join('\n');
@@ -120,7 +120,7 @@ export const ReportsView: React.FC = () => {
           </div>
           <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 print:border-black/10 print:bg-slate-50">
             <span className="text-[10px] text-slate-400 print:text-slate-600 uppercase font-bold">Tier-1 Entities</span>
-            <p className="text-xl font-bold text-white print:text-black font-mono-telemetry">248 Monitored</p>
+            <p className="text-xl font-bold text-white print:text-black font-mono-telemetry">{suppliers.length} Monitored</p>
           </div>
           <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 print:border-black/10 print:bg-slate-50">
             <span className="text-[10px] text-slate-400 print:text-slate-600 uppercase font-bold">Active Disruptions</span>

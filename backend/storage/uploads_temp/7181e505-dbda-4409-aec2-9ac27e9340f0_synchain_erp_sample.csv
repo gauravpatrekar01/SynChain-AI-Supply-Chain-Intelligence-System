@@ -1,0 +1,6 @@
+supplier_id,supplier_name,product_id,order_id,lead_time_days,order_quantity,unit_cost
+SUP-001,Supplier A,PROD-101,ORD-1001,5,500,12.5
+SUP-002,Supplier B,PROD-102,ORD-1002,8,300,18.75
+SUP-003,Supplier C,PROD-103,ORD-1003,3,750,9.99
+SUP-001,Supplier A,PROD-104,ORD-1004,6,200,15.0
+SUP-004,Supplier D,PROD-105,ORD-1005,10,150,22.4
