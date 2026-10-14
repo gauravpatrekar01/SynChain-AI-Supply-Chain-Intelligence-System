@@ -2,9 +2,14 @@ import pandas as pd
 from prophet import Prophet
 from typing import Dict, Any, List
 
+MODEL_VERSION = "Prophet-v1.1.5"
+
 class ForecastingService:
-    def __init__(self):
-        pass
+    def __init__(self, interval_width: float = 0.95):
+        if not 0 < interval_width < 1:
+            raise ValueError("interval_width must be between 0 and 1")
+
+        self.interval_width = interval_width
 
     def generate_demand_forecast(self, historical_data: List[Dict[str, Any]], horizon: int) -> Dict[str, Any]:
         """
@@ -20,7 +25,12 @@ class ForecastingService:
         df["ds"] = pd.to_datetime(df["ds"])
 
         # Initialize and fit model
-        model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
+        model = Prophet(
+    yearly_seasonality=True,
+    weekly_seasonality=True,
+    daily_seasonality=False,
+    interval_width=self.interval_width,
+)
         model.fit(df)
 
         # Make future dataframe
@@ -40,6 +50,6 @@ class ForecastingService:
 
         return {
             "forecast": results,
-            "model_version": "Prophet-v1.1.5",
+            "model_version": MODEL_VERSION,
             "horizon": horizon
         }
