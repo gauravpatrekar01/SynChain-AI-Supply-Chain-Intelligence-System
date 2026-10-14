@@ -274,3 +274,32 @@ class IntegrationHealthCheck(Base):
     error_message = Column(String, nullable=True)
     details = Column(JSONB, nullable=True)
     checked_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class Shipment(Base):
+    __tablename__ = "shipments"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    shipment_id = Column(String(100), unique=True, nullable=False, index=True)
+    shipment_name = Column(String(255), nullable=False)
+    supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True, index=True)
+    origin = Column(String(255), nullable=False)
+    destination = Column(String(255), nullable=False)
+    cargo_description = Column(String(255), nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    transport_mode = Column(String(50), nullable=False)  # 'Ocean', 'Air', 'Ground', 'Rail'
+    departure_date = Column(DateTime(timezone=True), nullable=False)
+    expected_delivery_date = Column(DateTime(timezone=True), nullable=False)
+    actual_delivery_date = Column(DateTime(timezone=True), nullable=True)
+    carrier_name = Column(String(255), nullable=False)
+    tracking_number = Column(String(100), nullable=True)
+    status = Column(String(50), nullable=False, default="in_transit")  # 'in_transit', 'delivered', 'delayed', 'pending', 'cancelled'
+    risk_score = Column(Integer, nullable=False, default=0)
+    risk_level = Column(String(50), nullable=False, default="LOW")  # 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
+    risk_factors = Column(JSONB, nullable=True)
+    data_completeness = Column(String(50), nullable=False, default="PARTIAL")  # 'PARTIAL', 'COMPLETE'
+    initial_risk_score = Column(Integer, nullable=True)
+    tracking_history = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    supplier = relationship("Supplier", foreign_keys=[supplier_id], lazy="joined")
+

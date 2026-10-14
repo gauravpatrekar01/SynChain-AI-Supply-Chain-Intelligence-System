@@ -36,9 +36,16 @@ import {
   DashboardRecommendationData,
   Supplier,
   Shipment,
+  ShipmentSummary,
+  ShipmentListResponse,
+  ShipmentRiskData,
+  ShipmentFormData,
   PortNode,
   DigitalTwinNode,
   DigitalTwinEdge,
+  SimulationSuppliersResponse,
+  DecisionSimulationPayload,
+  DecisionSimulationResult,
 } from '../types';
 import {
   mockAIHealth,
@@ -338,17 +345,88 @@ export const apiService = {
     }
   },
 
-  // Live Shipments Ledger (Real Orders & Logistics from DB)
+  // Live Shipments Ledger (Real Database Records & Management)
   async getShipments(): Promise<Shipment[]> {
     try {
-      const res = await apiClient.get('/shipments');
+      const res = await apiClient.get('/shipments', { params: { flat: true } });
       if (Array.isArray(res.data) && res.data.length > 0) {
         return res.data;
+      }
+      if (res.data && Array.isArray(res.data.items) && res.data.items.length > 0) {
+        return res.data.items;
       }
       return mockShipments;
     } catch {
       return mockShipments;
     }
+  },
+
+  async getShipmentsList(params?: {
+    search?: string;
+    status?: string;
+    risk_level?: string;
+    transport_mode?: string;
+    sort_by?: string;
+    sort_order?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<ShipmentListResponse> {
+    const res = await apiClient.get('/shipments', { params });
+    if (res.data && Array.isArray(res.data.items)) {
+      return res.data;
+    }
+    // If flat array returned
+    if (Array.isArray(res.data)) {
+      return {
+        items: res.data,
+        total: res.data.length,
+        page: 1,
+        page_size: res.data.length,
+        pages: 1,
+      };
+    }
+    return {
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    };
+  },
+
+  async getShipmentSummary(): Promise<ShipmentSummary> {
+    const res = await apiClient.get('/shipments/summary');
+    return res.data;
+  },
+
+  async getShipmentById(id: string): Promise<Shipment> {
+    const res = await apiClient.get(`/shipments/${encodeURIComponent(id)}`);
+    return res.data;
+  },
+
+  async createShipment(data: ShipmentFormData): Promise<Shipment> {
+    const res = await apiClient.post('/shipments', data);
+    return res.data;
+  },
+
+  async updateShipment(id: string, data: Partial<ShipmentFormData>): Promise<Shipment> {
+    const res = await apiClient.put(`/shipments/${encodeURIComponent(id)}`, data);
+    return res.data;
+  },
+
+  async deleteShipment(id: string): Promise<{ success: boolean; message: string; shipment_id?: string }> {
+    const res = await apiClient.delete(`/shipments/${encodeURIComponent(id)}`);
+    return res.data;
+  },
+
+  async getShipmentRisk(id: string): Promise<ShipmentRiskData> {
+    const res = await apiClient.get(`/shipments/${encodeURIComponent(id)}/risk`);
+    return res.data;
+  },
+
+  async recalculateShipmentRisk(id: string): Promise<ShipmentRiskData> {
+    const res = await apiClient.post(`/shipments/${encodeURIComponent(id)}/recalculate-risk`);
+    return res.data;
   },
 
   // Inventory & Safety Stock (Real Inventory from DB)
@@ -421,6 +499,16 @@ export const apiService = {
     const res = await apiClient.get(`/forecast/demand-history/${encodeURIComponent(sku)}`, {
       params: { limit },
     });
+    return res.data;
+  },
+
+  async getDemandForecast(payload: DemandForecastRequestPayload): Promise<DemandForecastResponsePayload> {
+    const res = await apiClient.post('/forecast/demand', payload);
+    return res.data;
+  },
+
+  async getInventoryReorderPolicy(payload: InventoryPolicyRequestPayload): Promise<InventoryPolicyResponsePayload> {
+    const res = await apiClient.post('/inventory/reorder-policy', payload);
     return res.data;
   },
 

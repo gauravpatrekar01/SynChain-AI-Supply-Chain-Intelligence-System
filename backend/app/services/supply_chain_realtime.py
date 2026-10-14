@@ -16,6 +16,7 @@ from app.models.postgres.models import (
     ImportedRecord,
     DemandForecast,
     IntegrationHealthCheck,
+    Shipment,
 )
 from app.services.dashboard.analytics_service import DashboardAnalyticsService
 
@@ -202,6 +203,25 @@ class RealtimeSupplyChainService:
     @staticmethod
     def get_shipments(db: Session) -> List[Dict[str, Any]]:
         """Returns live tracked shipments derived from imported orders, products, and suppliers."""
+        db_shipments = db.query(Shipment).order_by(Shipment.created_at.desc()).all()
+        if db_shipments:
+            return [
+                {
+                    "id": s.shipment_id,
+                    "carrier": s.carrier_name,
+                    "mode": (s.transport_mode or "ocean").lower(),
+                    "origin": s.origin,
+                    "destination": s.destination,
+                    "cargoDescription": s.cargo_description,
+                    "speedKnots": 22 if (s.transport_mode or "").lower() == "ocean" else (480 if (s.transport_mode or "").lower() == "air" else 65),
+                    "eta": s.expected_delivery_date.strftime("%Y-%m-%d %H:%M UTC") if s.expected_delivery_date else "",
+                    "status": "delayed" if s.status == "delayed" else ("optimal" if s.status in ("delivered", "in_transit") else s.status),
+                    "vesselName": s.shipment_name,
+                    "rerouteRecommendation": "Alternative coastal rail corridor available with 0 penalty hours" if s.status == "delayed" or s.risk_score >= 60 else None,
+                }
+                for s in db_shipments
+            ]
+
         orders = db.query(Order).order_by(Order.order_date.desc()).all()
         products = {p.id: p for p in db.query(Product).all()}
         suppliers = db.query(Supplier).all()

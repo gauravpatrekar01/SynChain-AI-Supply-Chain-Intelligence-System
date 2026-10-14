@@ -385,67 +385,7 @@ export const ForecastView: React.FC = () => {
     ],
   };
 
-  // Demand forecast chart option
-  const demandOption = {
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(15, 23, 42, 0.95)',
-      borderColor: 'rgba(139, 92, 246, 0.4)',
-      borderWidth: 1,
-      textStyle: { color: '#f8fafc', fontSize: 12 },
-    },
-    legend: {
-      data: ['Actual Orders', 'AI Predicted Demand', 'Confidence Upper (95%)'],
-      textStyle: { color: '#94a3b8', fontSize: 11 },
-      top: 0,
-      right: 10,
-    },
-    grid: { left: '3%', right: '3%', bottom: '4%', top: '16%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      data: slicedDemand.map((d) => d.date),
-      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } },
-      axisLabel: { color: '#94a3b8', fontSize: 11 },
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { show: false },
-      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)', type: 'dashed' } },
-      axisLabel: { color: '#94a3b8', fontSize: 11, formatter: (val: number) => `${(val / 1000).toFixed(0)}k` },
-    },
-    series: [
-      {
-        name: 'Actual Orders',
-        type: 'line',
-        data: slicedDemand.map((d) => d.actualDemandUnits ?? null),
-        smooth: true,
-        itemStyle: { color: '#3B82F6' },
-        lineStyle: { width: 3, color: '#3B82F6' },
-      },
-      {
-        name: 'AI Predicted Demand',
-        type: 'line',
-        data: slicedDemand.map((d) => d.predictedDemandUnits),
-        smooth: true,
-        itemStyle: { color: '#8B5CF6' },
-        lineStyle: { width: 3, color: '#8B5CF6' },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(139, 92, 246, 0.3)' },
-            { offset: 1, color: 'rgba(139, 92, 246, 0.0)' },
-          ]),
-        },
-      },
-      {
-        name: 'Confidence Upper (95%)',
-        type: 'line',
-        data: slicedDemand.map((d) => d.confidenceUpper),
-        smooth: true,
-        lineStyle: { color: '#06B6D4', type: 'dashed', width: 1.5 },
-      },
-    ],
-  };
+
 
   return (
     <div className="space-y-6">

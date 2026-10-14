@@ -18,6 +18,7 @@ from app.api.v1.intelligence import router as intelligence_router
 from app.api.v1.ml import router as ml_router
 from app.api.v1.forecast import router as forecast_router
 from app.api.v1.simulation import router as simulation_router
+from app.api.v1.shipments import router as shipments_router
 from app.schemas.forecasting import DemandForecastRequest, DemandForecastResponse
 
 router = APIRouter()
@@ -30,6 +31,7 @@ router.include_router(dashboard_router)
 router.include_router(ml_router)
 router.include_router(forecast_router)
 router.include_router(simulation_router)
+router.include_router(shipments_router)
 
 # Initialize services
 forecast_service = ForecastingService()
@@ -103,12 +105,6 @@ async def get_realtime_suppliers(db: Session = Depends(get_db)):
 async def get_digital_twin_topology(db: Session = Depends(get_db)):
     """Returns dynamic digital twin topology (nodes and edges) constructed from real database records."""
     return RealtimeSupplyChainService.get_digital_twin(db)
-
-
-@router.get("/shipments")
-async def get_realtime_shipments(db: Session = Depends(get_db)):
-    """Returns live shipments ledger derived from real orders and product lines."""
-    return RealtimeSupplyChainService.get_shipments(db)
 
 
 @router.get("/inventory")

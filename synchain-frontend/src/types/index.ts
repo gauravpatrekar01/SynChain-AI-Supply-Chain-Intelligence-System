@@ -154,16 +154,98 @@ export interface LiveTransportVehicle {
   delayHours: number;
 }
 
-export interface Shipment {
-  id: string;
-  carrier: string;
-  mode: 'ocean' | 'air' | 'ground' | 'rail';
+export interface ShipmentRiskFactor {
+  factor: string;
+  score: number;
+  weight: number;
+  available: boolean;
+  description?: string;
+}
+
+export interface ShipmentRiskData {
+  shipment_id: string;
+  risk_score: number;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  risk_factors: ShipmentRiskFactor[];
+  data_completeness: 'PARTIAL' | 'COMPLETE';
+  calculated_at: string;
+}
+
+export interface ShipmentTrackingEvent {
+  event?: string;
+  status?: string;
+  location?: string;
+  timestamp: string;
+  description?: string;
+}
+
+export interface ShipmentSummary {
+  total_shipments: number;
+  in_transit: number;
+  delivered: number;
+  delayed: number;
+  high_risk: number;
+  critical_risk: number;
+}
+
+export interface ShipmentListResponse {
+  items: Shipment[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface ShipmentFormData {
+  shipment_id?: string;
+  shipment_name: string;
+  supplier_id?: string | null;
   origin: string;
   destination: string;
+  cargo_description: string;
+  quantity: number;
+  transport_mode: 'Ocean' | 'Air' | 'Ground' | 'Rail';
+  departure_date: string;
+  expected_delivery_date: string;
+  actual_delivery_date?: string | null;
+  carrier_name: string;
+  tracking_number?: string;
+  status: 'in_transit' | 'delivered' | 'delayed' | 'pending' | 'cancelled';
+  initial_risk_score?: number;
+}
+
+export interface Shipment {
+  id: string;
+  shipment_id?: string;
+  shipment_name?: string;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  origin: string;
+  destination: string;
+  cargo_description?: string;
+  quantity?: number;
+  transport_mode?: string;
+  departure_date?: string;
+  expected_delivery_date?: string;
+  actual_delivery_date?: string | null;
+  carrier_name?: string;
+  tracking_number?: string | null;
+  status: string;
+  risk_score?: number;
+  risk_level?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  risk_factors?: ShipmentRiskFactor[];
+  data_completeness?: 'PARTIAL' | 'COMPLETE';
+  initial_risk_score?: number | null;
+  tracking_history?: ShipmentTrackingEvent[];
+  created_at?: string;
+  updated_at?: string;
+
+  // Legacy & GeoMap Compatibility
+  carrier: string;
+  mode: 'ocean' | 'air' | 'ground' | 'rail';
   cargoDescription: string;
   speedKnots?: number;
   eta: string;
-  status: 'optimal' | 'delayed' | 'rerouted' | 'critical';
   vesselName?: string;
   rerouteRecommendation?: string;
   originCoords?: GeoCoordinate;
