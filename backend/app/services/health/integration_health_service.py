@@ -3,10 +3,12 @@ import os
 import socket
 import time
 import httpx
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+import uuid
 from sqlalchemy.orm import Session
-from sqlalchemy import text, desc
+from sqlalchemy import text, desc, func
 from neo4j import GraphDatabase
 
 from app.core.config import settings
@@ -24,6 +26,17 @@ from app.models.postgres.models import (
 )
 from app.integrations import get_adapter
 from app.core.security import decrypt_secret
+
+
+def _safe_user_uuid(uid: Any) -> Optional[uuid.UUID]:
+    if isinstance(uid, uuid.UUID):
+        return uid
+    if isinstance(uid, str):
+        try:
+            return uuid.UUID(uid)
+        except (ValueError, AttributeError):
+            return None
+    return None
 
 
 def _format_time_ago(dt: Optional[datetime]) -> str:
@@ -55,13 +68,20 @@ def _sanitize_error_message(err_str: str) -> str:
     # Redact common credential patterns
     import re
     cleaned = re.sub(r"://([^:@]+):([^@]+)@", "://***:***@", err_str)
-    cleaned = re.sub(r"(token|key|secret|password|apikey)=([a-zA-Z0-9_\-\.]+)", r"\1=***", cleaned, flags=re.I)
+    cleaned = re.sub(r"(access_token|token|appid|api[_-]?key|key|secret|password)=([^&\s\"'<>]+)", r"\1=***", cleaned, flags=re.I)
+    cleaned = re.sub(r"(Bearer\s+)[^\s\"'<>]+", r"\1***", cleaned, flags=re.I)
     cleaned = re.sub(r"nak_live_[a-zA-Z0-9]+", "nak_live_***", cleaned)
     cleaned = re.sub(r"sk-[a-zA-Z0-9_\-]+", "sk-***", cleaned)
     return cleaned[:300]
 
 
 class IntegrationHealthService:
+    CHECK_TIMEOUT_SECONDS = 8.0
+    HISTORY_TIMEOUT_SECONDS = 2.0
+    CACHE_TTL_SECONDS = 60.0
+    _cached_results = {}
+    _probe_tasks = {}
+
     @staticmethod
     def get_data_freshness(db: Session) -> Dict[str, Any]:
         """Calculates freshness of ingested supply chain data."""
@@ -82,25 +102,14 @@ class IntegrationHealthService:
                 "total_imported_records": db.query(ImportedRecord).count(),
             }
         except Exception:
+            db.rollback()
             return {"latest_timestamp": None, "formatted": "Unknown", "total_imports": 0, "total_imported_records": 0}
 
     @staticmethod
     def get_last_successful_check(db: Session, integration_name: str) -> Optional[datetime]:
         try:
-            if settings.MONGODB_URL:
-                try:
-                    from app.core.mongodb import health_checks_col
-                    doc = health_checks_col().find_one(
-                        {"integration_name": integration_name, "status": "healthy"},
-                        sort=[("checked_at", -1)],
-                    )
-                    if doc and doc.get("checked_at"):
-                        ts = doc["checked_at"]
-                        if isinstance(ts, str):
-                            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
-                        return ts
-                except Exception:
-                    pass
+            # Health history belongs to SQL, like the authenticated application.
+            # An unavailable optional MongoDB must not delay every provider probe.
             record = (
                 db.query(IntegrationHealthCheck)
                 .filter(
@@ -112,6 +121,7 @@ class IntegrationHealthService:
             )
             return record.checked_at if record else None
         except Exception:
+            db.rollback()
             return None
 
     @classmethod
@@ -219,6 +229,8 @@ class IntegrationHealthService:
         try:
             from app.core.mongodb import ping_mongo, get_mongo_db
             res = await asyncio.to_thread(ping_mongo)
+            if not res.get("ok"):
+                raise RuntimeError("MongoDB ping did not report success")
             mongo_db = get_mongo_db()
             colls = await asyncio.to_thread(mongo_db.list_collection_names)
             latency_ms = res["latency_ms"]
@@ -238,7 +250,6 @@ class IntegrationHealthService:
                 "data_freshness": "Atlas Cluster Operational",
                 "details": {
                     "database": settings.MONGODB_DB_NAME or "synchain_db",
-                    "replicaSet": "atlas-vxj32u-shard-0",
                     "collections": colls,
                     "collections_count": len(colls),
                     "ssl": True,
@@ -250,7 +261,7 @@ class IntegrationHealthService:
             error_cat = "connection_error"
             if "TLSV1_ALERT_INTERNAL_ERROR" in err_str or "alert internal error" in err_str:
                 error_cat = "ip_access_denied"
-                sanitized_msg = "MongoDB Atlas TLS handshake rejected. Ensure current IP is whitelisted in Atlas Network Access (or 0.0.0.0/0 enabled)."
+                sanitized_msg = "MongoDB Atlas TLS handshake rejected. Verify the server IP is allowed in Atlas Network Access."
             elif "Authentication failed" in err_str or "bad auth" in err_str.lower():
                 error_cat = "auth_error"
                 sanitized_msg = "MongoDB Atlas credentials rejected (verify username/password)."
@@ -397,12 +408,14 @@ class IntegrationHealthService:
         api_secret = settings.ERPNEXT_API_SECRET or ""
 
         # Also inspect if DB has an active EnterpriseIntegration for ERPNext
-        db_erp = (
-            db.query(EnterpriseIntegration)
-            .filter(EnterpriseIntegration.system_type == "ERPNext", EnterpriseIntegration.is_active == True)
-            .order_by(desc(EnterpriseIntegration.updated_at))
-            .first()
+        query = db.query(EnterpriseIntegration).filter(
+            EnterpriseIntegration.system_type == "ERPNext", EnterpriseIntegration.is_active == True
         )
+        user_id = _safe_user_uuid(db.info.get("health_user_id"))
+        # Background system probes use environment configuration only.
+        db_erp = query.filter(EnterpriseIntegration.user_id == user_id).order_by(
+            desc(EnterpriseIntegration.updated_at)
+        ).first() if user_id else None
         if db_erp and db_erp.base_url:
             url = db_erp.base_url
             if db_erp.encrypted_api_key:
@@ -457,7 +470,7 @@ class IntegrationHealthService:
                         "error_message": None,
                         "is_enabled": True,
                         "data_freshness": _format_time_ago(last_sync) if last_sync else "Synchronized",
-                        "details": {"base_url": clean_base, "http_status": 200},
+                        "details": {"base_url": _sanitize_error_message(clean_base), "http_status": 200},
                     }
                 elif resp.status_code in (401, 403):
                     return {
@@ -473,7 +486,7 @@ class IntegrationHealthService:
                         "error_message": f"Authentication credentials rejected by ERPNext (HTTP {resp.status_code})",
                         "is_enabled": True,
                         "data_freshness": _format_time_ago(last_sync) if last_sync else "Auth required",
-                        "details": {"base_url": clean_base, "http_status": resp.status_code},
+                        "details": {"base_url": _sanitize_error_message(clean_base), "http_status": resp.status_code},
                     }
                 elif resp.status_code == 404:
                     return {
@@ -489,7 +502,7 @@ class IntegrationHealthService:
                         "error_message": "ERPNext endpoint responded with HTTP 404 (Check API resource path)",
                         "is_enabled": True,
                         "data_freshness": "Degraded",
-                        "details": {"base_url": clean_base, "http_status": 404},
+                        "details": {"base_url": _sanitize_error_message(clean_base), "http_status": 404},
                     }
                 else:
                     return {
@@ -505,7 +518,7 @@ class IntegrationHealthService:
                         "error_message": f"ERPNext responded with HTTP {resp.status_code}",
                         "is_enabled": True,
                         "data_freshness": "Degraded",
-                        "details": {"base_url": clean_base, "http_status": resp.status_code},
+                        "details": {"base_url": _sanitize_error_message(clean_base), "http_status": resp.status_code},
                     }
 
         except httpx.TimeoutException:
@@ -523,7 +536,7 @@ class IntegrationHealthService:
                 "error_message": "ERPNext server timed out after 6.0s",
                 "is_enabled": True,
                 "data_freshness": "Unavailable",
-                "details": {"base_url": clean_base},
+                "details": {"base_url": _sanitize_error_message(clean_base)},
             }
         except Exception as e:
             latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
@@ -540,7 +553,7 @@ class IntegrationHealthService:
                 "error_message": _sanitize_error_message(f"Failed to connect to {clean_base}: {str(e)}"),
                 "is_enabled": True,
                 "data_freshness": "Unavailable",
-                "details": {"base_url": clean_base},
+                "details": {"base_url": _sanitize_error_message(clean_base)},
             }
 
     @classmethod
@@ -986,23 +999,23 @@ class IntegrationHealthService:
                 resp = await client.get(s3_url)
                 latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-                # S3-compatible service responding with 200 or 403 AccessDenied confirms endpoint alive & listening
+                # Reachability is not proof that the application's credentials work.
                 if resp.status_code in (200, 403):
                     now_dt = datetime.now(timezone.utc)
-                    status = "healthy" if resp.status_code == 200 else "healthy"
+                    status = "degraded"
                     return {
                         "name": name,
                         "category": category,
                         "configuration_status": "configured",
                         "connection_status": status,
                         "last_checked_at": now_dt,
-                        "last_successful_check_at": now_dt,
+                        "last_successful_check_at": last_success,
                         "response_time_ms": latency_ms,
                         "last_sync_at": None,
-                        "error_category": None,
-                        "error_message": None,
+                        "error_category": "access_unverified",
+                        "error_message": "Storage endpoint is reachable; authenticated bucket access has not been verified.",
                         "is_enabled": True,
-                        "data_freshness": "Endpoint operational",
+                        "data_freshness": "Endpoint reachable; access unverified",
                         "details": {
                             "region": settings.AWS_REGION or "us-east-2",
                             "endpoint_reachable": True,
@@ -1090,10 +1103,8 @@ class IntegrationHealthService:
         last_success = cls.get_last_successful_check(db, name)
 
         def _test_socket():
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3.5)
-            sock.connect((host, port))
-            sock.close()
+            with socket.create_connection((host, port), timeout=3.5):
+                pass
             return True
 
         try:
@@ -1207,226 +1218,275 @@ class IntegrationHealthService:
             }
 
     @classmethod
-    async def check_all_integrations(cls, db: Session, persist: bool = True) -> List[Dict[str, Any]]:
-        """Runs health checks across all known integrations and persists results."""
-        tasks = []
+    def _check_specs(cls):
+        # SQL is still used for authentication and application data even when
+        # MongoDB is configured, so it must always have its own health result.
+        specs = [("Neon PostgreSQL", "database", cls.check_postgres)]
         if settings.MONGODB_URL:
-            tasks.append(cls.check_mongodb(db))
-        else:
-            tasks.append(cls.check_postgres(db))
-
-        tasks.extend([
-            cls.check_neo4j(db),
-            cls.check_erpnext(db),
-            cls.check_openweather(db),
-            cls.check_newsdata(db),
-            cls.check_storage(db),
-            cls.check_smtp(db),
-            cls.check_ml_model(db),
+            specs.append(("MongoDB Atlas Primary Database", "database", cls.check_mongodb))
+        specs.extend([
+            ("Neo4j Aura Graph Engine", "graph_database", cls.check_neo4j),
+            ("ERPNext REST API", "erp", cls.check_erpnext),
+            ("OpenWeather API", "weather", cls.check_openweather),
+            ("NewsData.io Intelligence Feed", "news", cls.check_newsdata),
+            ("Cloudinary Cloud Storage" if settings.CLOUDINARY_API_KEY else
+             "Cloudflare R2 / S3 Object Storage", "storage", cls.check_storage),
+            ("SMTP Email Alert Dispatcher", "email", cls.check_smtp),
+            ("Machine Learning Delay Predictor", "ai_ml", cls.check_ml_model),
         ])
+        return specs
 
-        results = await asyncio.gather(*tasks)
+    @staticmethod
+    def _worker_session(bind, user_id=None):
+        session = Session(bind=bind)
+        session.info["health_user_id"] = user_id
+        return session
 
-        if persist:
-            if settings.MONGODB_URL:
-                try:
-                    from app.core.mongodb import health_checks_col
-                    mongo_docs = []
-                    for item in results:
-                        mongo_docs.append({
-                            "integration_name": item["name"],
-                            "category": item["category"],
-                            "status": item["connection_status"],
-                            "latency_ms": item["response_time_ms"],
-                            "error_category": item.get("error_category"),
-                            "error_message": item.get("error_message"),
-                            "details": item.get("details"),
-                            "checked_at": item["last_checked_at"],
-                        })
-                    if mongo_docs:
-                        await asyncio.to_thread(health_checks_col().insert_many, mongo_docs)
-                except Exception:
-                    pass
+    @classmethod
+    async def _run_bounded_check(cls, bind, name, category, checker, user_id=None):
+        """Keep blocking drivers off the server loop, with one session per probe.
 
-            for item in results:
-                try:
-                    record = IntegrationHealthCheck(
+        A timed-out worker may still be inside a driver call. Keep its task until
+        it finishes so subsequent refreshes cannot launch duplicate stuck probes.
+        """
+        async def run():
+            with cls._worker_session(bind, user_id) as check_db:
+                return await checker(check_db)
+
+        loop = asyncio.get_running_loop()
+        key = (loop, bind, str(user_id), name)
+        task = cls._probe_tasks.get(key)
+        if task is None:
+            task = asyncio.create_task(run())
+            cls._probe_tasks[key] = task
+
+            def done(finished):
+                if cls._probe_tasks.get(key) is finished:
+                    cls._probe_tasks.pop(key, None)
+                # Consume errors even if every requesting client has timed out.
+                if not finished.cancelled():
+                    finished.exception()
+
+            task.add_done_callback(done)
+
+        started = time.perf_counter()
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), cls.CHECK_TIMEOUT_SECONDS)
+        except Exception as exc:
+            timed_out = isinstance(exc, (asyncio.TimeoutError, TimeoutError))
+            return {
+                "name": name,
+                "category": category,
+                "configuration_status": "configured",
+                "connection_status": "unhealthy",
+                "last_checked_at": datetime.now(timezone.utc),
+                "last_successful_check_at": None,
+                "response_time_ms": round((time.perf_counter() - started) * 1000, 2),
+                "last_sync_at": None,
+                "error_category": "timeout" if timed_out else "check_error",
+                "error_message": (
+                    f"Health check exceeded {cls.CHECK_TIMEOUT_SECONDS:g}s. Retry after verifying connectivity."
+                    if timed_out else _sanitize_error_message(str(exc))
+                ),
+                "is_enabled": True,
+                "data_freshness": "Unavailable",
+                "details": {},
+            }
+
+    @classmethod
+    async def _persist_results(cls, bind, results):
+        def persist():
+            with cls._worker_session(bind) as history_db:
+                for item in results:
+                    history_db.add(IntegrationHealthCheck(
                         integration_name=item["name"],
                         category=item["category"],
                         status=item["connection_status"],
                         latency_ms=item["response_time_ms"],
                         error_category=item.get("error_category"),
                         error_message=item.get("error_message"),
-                        details=item.get("details"),
+                        details={
+                            **(item.get("details") or {}),
+                            "configuration_status": item["configuration_status"],
+                            "is_enabled": item["is_enabled"],
+                        },
                         checked_at=item["last_checked_at"],
-                    )
-                    db.add(record)
-                except Exception:
-                    pass
-            try:
-                db.commit()
-            except Exception:
-                db.rollback()
+                    ))
+                history_db.commit()
 
+        # Do not turn a useful diagnostic response into an error when the
+        # database whose health is being measured cannot store its own history.
+        loop = asyncio.get_running_loop()
+        key = (loop, bind, "history_write")
+        task = cls._probe_tasks.get(key)
+        if task is not None:
+            return
+        task = asyncio.create_task(asyncio.to_thread(persist))
+        cls._probe_tasks[key] = task
+
+        def done(finished):
+            cls._probe_tasks.pop(key, None)
+            if not finished.cancelled():
+                finished.exception()
+
+        task.add_done_callback(done)
+        try:
+            await asyncio.wait_for(asyncio.shield(task), cls.HISTORY_TIMEOUT_SECONDS)
+        except Exception:
+            pass
+
+    @classmethod
+    async def check_all_integrations(
+        cls, db: Session, persist: bool = True, force_refresh: bool = False, user_id=None,
+    ) -> List[Dict[str, Any]]:
+        """Return recent checks or run independent probes with a bounded deadline."""
+        bind = db.get_bind()
+        cache_key = (bind, str(user_id))
+        cached = cls._cached_results.get(cache_key)
+        if not force_refresh and cached and time.monotonic() - cached[0] < cls.CACHE_TTL_SECONDS:
+            return deepcopy(cached[1])
+
+        builtins = asyncio.gather(*[
+            cls._run_bounded_check(bind, name, category, checker, user_id)
+            for name, category, checker in cls._check_specs()
+        ])
+        names = await cls._custom_integration_names(bind, user_id) if user_id else []
+
+        async def check_custom(name):
+            async def check(check_db):
+                return await cls._check_custom(check_db, name)
+            return await cls._run_bounded_check(bind, name, "custom_erp", check, user_id)
+
+        custom_results = await asyncio.gather(*(check_custom(name) for name in names))
+        results = await builtins
+        results.extend(item for item in custom_results if item is not None)
+        # Cache before optional history I/O so overlapping dashboard polls share
+        # the completed checks and do not repeatedly consume provider quotas.
+        cls._cached_results[cache_key] = (time.monotonic(), deepcopy(results))
+        if persist:
+            await cls._persist_results(bind, results)
         return results
 
     @classmethod
-    async def check_single_integration(cls, db: Session, integration_name: str, persist: bool = True) -> Optional[Dict[str, Any]]:
-        """Runs health check for a single specified integration."""
+    async def _custom_integration_names(cls, bind, user_id):
+        parsed_uid = _safe_user_uuid(user_id)
+        if not parsed_uid:
+            return []
+
+        def read():
+            with cls._worker_session(bind, parsed_uid) as db:
+                return [row[0] for row in db.query(EnterpriseIntegration.name).filter(
+                    EnterpriseIntegration.user_id == parsed_uid,
+                    # ERPNext is represented by its dedicated probe above.
+                    func.lower(EnterpriseIntegration.system_type) != "erpnext",
+                ).all()]
+
+        key = (asyncio.get_running_loop(), bind, str(parsed_uid), "custom_names")
+        task = cls._probe_tasks.get(key)
+        if task is None:
+            task = asyncio.create_task(asyncio.to_thread(read))
+            cls._probe_tasks[key] = task
+            def done(finished):
+                cls._probe_tasks.pop(key, None)
+                if not finished.cancelled():
+                    finished.exception()
+            task.add_done_callback(done)
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), cls.HISTORY_TIMEOUT_SECONDS)
+        except Exception:
+            return []
+
+    @classmethod
+    async def _check_custom(cls, db, integration_name):
+        query = db.query(EnterpriseIntegration).filter(
+            func.lower(EnterpriseIntegration.name) == integration_name.strip().lower()
+        )
+        user_id = _safe_user_uuid(db.info.get("health_user_id"))
+        if not user_id:
+            return None
+        db_int = query.filter(EnterpriseIntegration.user_id == user_id).first()
+        if not db_int:
+            return None
+        now = datetime.now(timezone.utc)
+        result = {
+            "name": db_int.name,
+            "category": "custom_erp",
+            "configuration_status": "configured",
+            "connection_status": "unknown",
+            "last_checked_at": now,
+            "last_successful_check_at": cls.get_last_successful_check(db, db_int.name),
+            "response_time_ms": 0.0,
+            "last_sync_at": None,
+            "error_category": None,
+            "error_message": None,
+            "is_enabled": db_int.is_active,
+            "data_freshness": "Disabled" if not db_int.is_active else "Not checked",
+            "details": {"system_type": db_int.system_type},
+        }
+        if not db_int.is_active:
+            return result
+        started = time.perf_counter()
+        adapter = get_adapter(db_int.system_type)(
+            base_url=db_int.base_url,
+            auth_type=db_int.auth_type,
+            api_key=decrypt_secret(db_int.encrypted_api_key) if db_int.encrypted_api_key else None,
+            api_secret=decrypt_secret(db_int.encrypted_api_secret) if db_int.encrypted_api_secret else None,
+            configuration=db_int.configuration,
+        )
+        ok = await adapter.test_connection()
+        result.update(
+            connection_status="healthy" if ok else "unhealthy",
+            last_successful_check_at=now if ok else result["last_successful_check_at"],
+            response_time_ms=round((time.perf_counter() - started) * 1000, 2),
+            error_category=None if ok else "connection_error",
+            error_message=None if ok else "Connection test returned failure",
+            data_freshness="Connection verified" if ok else "Unavailable",
+        )
+        return result
+
+    @classmethod
+    async def check_single_integration(
+        cls, db: Session, integration_name: str, persist: bool = True, user_id=None,
+    ) -> Optional[Dict[str, Any]]:
         target = integration_name.strip().lower()
-        result = None
-
-        if "mongo" in target or "atlas" in target:
-            result = await cls.check_mongodb(db)
-        elif "postgres" in target or "neon" in target:
-            result = await cls.check_postgres(db)
-        elif "database" in target:
-            if settings.MONGODB_URL:
-                result = await cls.check_mongodb(db)
-            else:
-                result = await cls.check_postgres(db)
-        elif "neo4j" in target or "graph" in target:
-            result = await cls.check_neo4j(db)
-        elif "erpnext" in target or "erp" in target:
-            result = await cls.check_erpnext(db)
-        elif "weather" in target:
-            result = await cls.check_openweather(db)
-        elif "news" in target:
-            result = await cls.check_newsdata(db)
-        elif "cloudinary" in target or "storage" in target or "r2" in target or "s3" in target:
-            result = await cls.check_storage(db)
-        elif "smtp" in target or "email" in target:
-            result = await cls.check_smtp(db)
-        elif "ml" in target or "model" in target or "ai" in target or "delay" in target or "predict" in target:
-            result = await cls.check_ml_model(db)
-        else:
-            # Check DB integrations
-            db_int = db.query(EnterpriseIntegration).filter(EnterpriseIntegration.name.ilike(f"%{integration_name}%")).first()
-            if db_int:
-                start_time = time.perf_counter()
-                try:
-                    adapter = get_adapter(db_int.system_type)
-                    api_key = decrypt_secret(db_int.encrypted_api_key) if db_int.encrypted_api_key else None
-                    api_secret = decrypt_secret(db_int.encrypted_api_secret) if db_int.encrypted_api_secret else None
-                    inst = adapter(
-                        base_url=db_int.base_url,
-                        auth_type=db_int.auth_type,
-                        api_key=api_key,
-                        api_secret=api_secret,
-                        configuration=db_int.configuration,
-                    )
-                    ok = await inst.test_connection()
-                    latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-                    now_dt = datetime.now(timezone.utc)
-                    result = {
-                        "name": db_int.name,
-                        "category": "custom_erp",
-                        "configuration_status": "configured",
-                        "connection_status": "healthy" if ok else "unhealthy",
-                        "last_checked_at": now_dt,
-                        "last_successful_check_at": now_dt if ok else db_int.last_tested_at,
-                        "response_time_ms": latency_ms,
-                        "last_sync_at": db_int.last_tested_at,
-                        "error_category": None if ok else "connection_error",
-                        "error_message": None if ok else "Connection test returned failure",
-                        "is_enabled": db_int.is_active,
-                        "data_freshness": "Custom enterprise adapter",
-                        "details": {"system_type": db_int.system_type, "base_url": db_int.base_url},
-                    }
-                except Exception as e:
-                    latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
-                    result = {
-                        "name": db_int.name,
-                        "category": "custom_erp",
-                        "configuration_status": "configured",
-                        "connection_status": "unhealthy",
-                        "last_checked_at": datetime.now(timezone.utc),
-                        "last_successful_check_at": db_int.last_tested_at,
-                        "response_time_ms": latency_ms,
-                        "last_sync_at": db_int.last_tested_at,
-                        "error_category": "adapter_error",
-                        "error_message": _sanitize_error_message(str(e)),
-                        "is_enabled": db_int.is_active,
-                        "data_freshness": "Unavailable",
-                        "details": {"system_type": db_int.system_type},
-                    }
-
-        if result and persist:
-            if settings.MONGODB_URL:
-                try:
-                    from app.core.mongodb import health_checks_col
-                    mongo_doc = {
-                        "integration_name": result["name"],
-                        "category": result["category"],
-                        "status": result["connection_status"],
-                        "latency_ms": result["response_time_ms"],
-                        "error_category": result.get("error_category"),
-                        "error_message": result.get("error_message"),
-                        "details": result.get("details"),
-                        "checked_at": result["last_checked_at"],
-                    }
-                    await asyncio.to_thread(health_checks_col().insert_one, mongo_doc)
-                except Exception:
-                    pass
-            try:
-                record = IntegrationHealthCheck(
-                    integration_name=result["name"],
-                    category=result["category"],
-                    status=result["connection_status"],
-                    latency_ms=result["response_time_ms"],
-                    error_category=result.get("error_category"),
-                    error_message=result.get("error_message"),
-                    details=result.get("details"),
-                    checked_at=result["last_checked_at"],
-                )
-                db.add(record)
-                db.commit()
-            except Exception:
-                db.rollback()
-
+        specs = cls._check_specs()
+        specs.append(("MongoDB Atlas Primary Database", "database", cls.check_mongodb))
+        aliases = {
+            "mongo": cls.check_mongodb, "mongodb": cls.check_mongodb,
+            "mongodb atlas": cls.check_mongodb, "atlas": cls.check_mongodb,
+            "postgres": cls.check_postgres, "postgresql": cls.check_postgres,
+            "neon": cls.check_postgres, "database": cls.check_postgres,
+            "neo4j": cls.check_neo4j, "graph": cls.check_neo4j,
+            "erpnext": cls.check_erpnext, "erp": cls.check_erpnext,
+            "openweather": cls.check_openweather, "weather": cls.check_openweather,
+            "newsdata": cls.check_newsdata, "news": cls.check_newsdata,
+            "cloudinary": cls.check_storage, "storage": cls.check_storage,
+            "r2": cls.check_storage, "s3": cls.check_storage,
+            "smtp": cls.check_smtp, "email": cls.check_smtp,
+            "ml": cls.check_ml_model, "ml_model": cls.check_ml_model,
+            "model": cls.check_ml_model, "ai": cls.check_ml_model,
+        }
+        spec = next((s for s in specs if s[0].lower() == target), None)
+        if spec is None and target in aliases:
+            spec = next(s for s in specs if s[2] == aliases[target])
+        if spec is None:
+            async def custom(check_db):
+                return await cls._check_custom(check_db, integration_name)
+            spec = (integration_name, "custom_erp", custom)
+        bind = db.get_bind()
+        result = await cls._run_bounded_check(bind, *spec, user_id=user_id)
+        if result:
+            cls._cached_results.pop((bind, str(user_id)), None)
+            if persist:
+                await cls._persist_results(bind, [result])
         return result
 
     @classmethod
     def get_integration_history(cls, db: Session, integration_name: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Retrieves recent health check records for a specific integration."""
-        if settings.MONGODB_URL:
-            try:
-                import re
-                from app.core.mongodb import health_checks_col
-                regx = re.compile(re.escape(integration_name), re.IGNORECASE)
-                cursor = (
-                    health_checks_col()
-                    .find({"integration_name": {"$regex": regx}})
-                    .sort("checked_at", -1)
-                    .limit(limit)
-                )
-                docs = list(cursor)
-                if docs:
-                    res = []
-                    for d in docs:
-                        checked_at = d.get("checked_at")
-                        if isinstance(checked_at, datetime):
-                            checked_str = checked_at.isoformat()
-                        else:
-                            checked_str = str(checked_at) if checked_at else None
-                        res.append({
-                            "id": str(d.get("_id", d.get("id"))),
-                            "integration_name": d.get("integration_name"),
-                            "category": d.get("category"),
-                            "status": d.get("status"),
-                            "latency_ms": float(d.get("latency_ms", 0.0)),
-                            "error_category": d.get("error_category"),
-                            "error_message": d.get("error_message"),
-                            "checked_at": checked_str,
-                            "details": d.get("details"),
-                        })
-                    return res
-            except Exception:
-                pass
         try:
             records = (
                 db.query(IntegrationHealthCheck)
-                .filter(IntegrationHealthCheck.integration_name.ilike(f"%{integration_name}%"))
+                .filter(IntegrationHealthCheck.integration_name == integration_name)
                 .order_by(desc(IntegrationHealthCheck.checked_at))
                 .limit(limit)
                 .all()
@@ -1445,5 +1505,28 @@ class IntegrationHealthService:
                 }
                 for r in records
             ]
+        except Exception:
+            db.rollback()
+            return []
+
+    @classmethod
+    async def get_integration_history_async(cls, db, integration_name, limit=20):
+        bind = db.get_bind()
+        def read():
+            with cls._worker_session(bind) as history_db:
+                return cls.get_integration_history(history_db, integration_name, limit)
+
+        key = (asyncio.get_running_loop(), bind, "history_read", integration_name)
+        task = cls._probe_tasks.get(key)
+        if task is None:
+            task = asyncio.create_task(asyncio.to_thread(read))
+            cls._probe_tasks[key] = task
+            def done(finished):
+                cls._probe_tasks.pop(key, None)
+                if not finished.cancelled():
+                    finished.exception()
+            task.add_done_callback(done)
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), cls.HISTORY_TIMEOUT_SECONDS)
         except Exception:
             return []

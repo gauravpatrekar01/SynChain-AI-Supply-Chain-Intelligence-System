@@ -19,6 +19,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useSupplyChain } from '../../context/SupplyChainContext';
 import { soundFX } from '../../services/audioService';
 import { AppTheme } from '../../types';
+import { healthStatusLabel } from '../../services/healthScore';
 
 interface TopNavbarProps {
   onToggleSidebar?: () => void;
@@ -30,6 +31,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
   const { theme, setTheme, settings, updateSettings } = useTheme();
   const {
     health,
+    healthLoading,
     unreadAlertsCount,
     setIsNotificationDrawerOpen,
     setIsCommandPaletteOpen,
@@ -79,15 +81,15 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
       {/* Left side: System Status & Live Clock */}
       <div className="flex items-center gap-4 lg:gap-6 min-w-0">
         {/* Realtime AI Status Pill */}
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono-telemetry shadow-sm">
+        <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-mono-telemetry shadow-sm ${health.score == null || health.dataStatus === 'unavailable' ? 'bg-slate-500/10 border-slate-500/30 text-slate-400' : health.status === 'optimal' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : health.status === 'warning' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-rose-500/10 border-rose-500/30 text-rose-400'}`}>
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            {healthLoading && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>}
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-current"></span>
           </span>
-          <span className="font-semibold text-emerald-300">AI NEURAL CORE:</span>
-          <span>{health.score}% NOMINAL</span>
+          <span className="font-semibold">OVERALL HEALTH:</span>
+          <span>{health.score == null ? (healthLoading ? 'Calculating…' : healthStatusLabel(health)) : `${health.score.toFixed(1)}% ${healthStatusLabel(health)}`}</span>
           <span className="text-emerald-500/60">•</span>
-          <span className="text-emerald-400/80">{health.latencyMs}ms</span>
+          <span className="opacity-80">{health.latencyMs > 0 ? `${health.latencyMs}ms` : '—'}</span>
         </div>
 
         {/* Live Clock & Weather Telemetry */}
@@ -136,7 +138,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ onNavigate }) => {
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-cyan-400' : ''}`} />
           <span className="hidden xl:inline text-[11px] font-semibold">
-            {isRealDataConnected ? 'DB LIVE' : 'SYNCING'}
+            {isLoading || healthLoading ? 'SYNCING' : isRealDataConnected ? 'DB LIVE' : 'OFFLINE'}
           </span>
         </button>
 

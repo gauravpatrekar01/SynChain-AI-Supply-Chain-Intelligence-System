@@ -53,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       title: 'Command & Twin',
       items: [
         { id: 'dashboard', label: 'AI Command Center', icon: LayoutDashboard },
-        { id: 'digital-twin', label: 'Digital Twin Graph', icon: Network, badge: 'Live' },
+        // { id: 'digital-twin', label: 'Digital Twin Graph', icon: Network, badge: 'Live' },
         { id: 'geomap', label: 'Fleet & Geo Logistics', icon: Globe2 },
       ],
     },

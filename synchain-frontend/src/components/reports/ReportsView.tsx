@@ -116,7 +116,7 @@ export const ReportsView: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 print:border-black/10 print:bg-slate-50">
             <span className="text-[10px] text-slate-400 print:text-slate-600 uppercase font-bold">Health Score</span>
-            <p className="text-xl font-bold text-emerald-400 print:text-emerald-700 font-mono-telemetry">{health.score}% Nominal</p>
+            <p className="text-xl font-bold text-slate-100 print:text-slate-800 font-mono-telemetry">{health.score == null ? 'Not scored' : `${health.score.toFixed(1)}%`}{health.dataStatus === 'unavailable' ? ' (last known)' : ''}</p>
           </div>
           <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 print:border-black/10 print:bg-slate-50">
             <span className="text-[10px] text-slate-400 print:text-slate-600 uppercase font-bold">Tier-1 Entities</span>

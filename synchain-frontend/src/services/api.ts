@@ -260,17 +260,17 @@ export const apiService = {
 
   // Integration Health Monitoring
   async getIntegrationsHealth(): Promise<AllIntegrationsHealthResponse> {
-    const res = await apiClient.get('/integrations/health');
+    const res = await apiClient.get('/integrations/health', { timeout: 20000 });
     return res.data;
   },
 
   async triggerHealthCheck(name?: string): Promise<AllIntegrationsHealthResponse> {
-    const res = await apiClient.post('/integrations/health/check', name ? { integration_name: name } : {});
+    const res = await apiClient.post('/integrations/health/check', name ? { integration_name: name } : {}, { timeout: 20000 });
     return res.data;
   },
 
   async getIntegrationHealthDetail(name: string): Promise<IntegrationHealthDetailResponse> {
-    const res = await apiClient.get(`/integrations/health/${encodeURIComponent(name)}`);
+    const res = await apiClient.get(`/integrations/health/${encodeURIComponent(name)}`, { timeout: 20000 });
     return res.data;
   },
 

@@ -1,9 +1,21 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from pydantic import BaseModel, Field
 
 
+class DashboardHealthComponent(BaseModel):
+    key: str
+    label: str
+    score: Optional[float] = Field(ge=0, le=100)
+    weight: float = Field(ge=0, le=1)
+    sampleSize: int = Field(ge=0)
+
+
 class DashboardOverviewResponse(BaseModel):
+    overallHealthScore: Optional[float] = Field(ge=0, le=100)
+    healthComponents: List[DashboardHealthComponent]
+    healthDataStatus: Literal["available", "insufficient_data"]
+    healthExplanation: str
     globalRiskIndex: int
     activeDisruptions: int
     onTimeDeliveryRate: float

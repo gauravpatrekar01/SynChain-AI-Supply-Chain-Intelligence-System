@@ -43,7 +43,7 @@ export interface KPIMetric {
 }
 
 export interface AIHealthScore {
-  score: number; // 0 - 100
+  score: number | null; // 0 - 100; null when no observed data is available
   status: HealthStatus;
   resilienceRating: string;
   lastUpdated: string;
@@ -51,6 +51,17 @@ export interface AIHealthScore {
   predictedRiskEventsCount: number;
   mitigationReadinessPct: number;
   latencyMs: number;
+  dataStatus?: 'available' | 'insufficient_data' | 'unavailable';
+  components?: HealthScoreComponent[];
+  explanation?: string;
+}
+
+export interface HealthScoreComponent {
+  key: string;
+  label: string;
+  score: number | null;
+  weight: number;
+  sampleSize: number;
 }
 
 export interface LiveIncidentAlert {
@@ -829,7 +840,7 @@ export interface IntegrationHealthItem {
 }
 
 export interface AllIntegrationsHealthResponse {
-  overall_status: 'healthy' | 'degraded' | 'unhealthy';
+  overall_status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
   healthy_count: number;
   degraded_count: number;
   unhealthy_count: number;
@@ -856,6 +867,10 @@ export interface IntegrationHealthDetailResponse {
 
 // --- Dynamic Dashboard Intelligence ---
 export interface DashboardOverviewData {
+  overallHealthScore: number | null;
+  healthComponents: HealthScoreComponent[];
+  healthDataStatus: 'available' | 'insufficient_data';
+  healthExplanation: string;
   globalRiskIndex: number;
   activeDisruptions: number;
   onTimeDeliveryRate: number;

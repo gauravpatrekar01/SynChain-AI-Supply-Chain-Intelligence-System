@@ -33,29 +33,39 @@ def validate_system_type(system_type: str) -> None:
         )
 
 
+def _health_response(items):
+    active = [i for i in items if i["configuration_status"] == "configured" and i["is_enabled"]]
+    healthy = sum(i["connection_status"] == "healthy" for i in active)
+    degraded = sum(i["connection_status"] == "degraded" for i in active)
+    unhealthy = sum(i["connection_status"] == "unhealthy" for i in active)
+    if not active or healthy + degraded + unhealthy == 0:
+        overall = "unknown"
+    elif unhealthy:
+        overall = "unhealthy"
+    elif degraded or healthy != len(active):
+        overall = "degraded"
+    else:
+        overall = "healthy"
+    return AllIntegrationsHealthResponse(
+        overall_status=overall,
+        healthy_count=healthy,
+        degraded_count=degraded,
+        unhealthy_count=unhealthy,
+        not_configured_count=sum(i["configuration_status"] == "not_configured" for i in items),
+        total_count=len(items),
+        timestamp=max((i["last_checked_at"] for i in items if i.get("last_checked_at")), default=datetime.now(timezone.utc)),
+        integrations=[IntegrationHealthItem(**item) for item in items],
+    )
+
+
 @router.get("/health", response_model=AllIntegrationsHealthResponse)
 async def get_all_integrations_health(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """Returns the latest recorded health status of all known integrations."""
-    items = await IntegrationHealthService.check_all_integrations(db, persist=True)
-    healthy_c = sum(1 for i in items if i["connection_status"] == "healthy")
-    degraded_c = sum(1 for i in items if i["connection_status"] == "degraded")
-    unhealthy_c = sum(1 for i in items if i["connection_status"] == "unhealthy")
-    not_conf_c = sum(1 for i in items if i["configuration_status"] == "not_configured")
-    overall = "healthy" if unhealthy_c == 0 and degraded_c == 0 else ("degraded" if unhealthy_c == 0 else "unhealthy")
-
-    return AllIntegrationsHealthResponse(
-        overall_status=overall,
-        healthy_count=healthy_c,
-        degraded_count=degraded_c,
-        unhealthy_count=unhealthy_c,
-        not_configured_count=not_conf_c,
-        total_count=len(items),
-        timestamp=datetime.now(timezone.utc),
-        integrations=[IntegrationHealthItem(**item) for item in items],
-    )
+    """Returns live diagnostics, reusing results for at most 60 seconds."""
+    items = await IntegrationHealthService.check_all_integrations(db, persist=True, user_id=current_user.id)
+    return _health_response(items)
 
 
 @router.post("/health/check", response_model=AllIntegrationsHealthResponse)
@@ -67,29 +77,13 @@ async def trigger_health_checks(
     """Runs health checks for configured integrations, optionally filtered by integration name."""
     req_name = request.integration_name if request else None
     if req_name:
-        single_item = await IntegrationHealthService.check_single_integration(db, req_name, persist=True)
+        single_item = await IntegrationHealthService.check_single_integration(db, req_name, persist=True, user_id=current_user.id)
         if not single_item:
             raise HTTPException(status_code=404, detail=f"Integration '{req_name}' not found")
         items = [single_item]
     else:
-        items = await IntegrationHealthService.check_all_integrations(db, persist=True)
-
-    healthy_c = sum(1 for i in items if i["connection_status"] == "healthy")
-    degraded_c = sum(1 for i in items if i["connection_status"] == "degraded")
-    unhealthy_c = sum(1 for i in items if i["connection_status"] == "unhealthy")
-    not_conf_c = sum(1 for i in items if i["configuration_status"] == "not_configured")
-    overall = "healthy" if unhealthy_c == 0 and degraded_c == 0 else ("degraded" if unhealthy_c == 0 else "unhealthy")
-
-    return AllIntegrationsHealthResponse(
-        overall_status=overall,
-        healthy_count=healthy_c,
-        degraded_count=degraded_c,
-        unhealthy_count=unhealthy_c,
-        not_configured_count=not_conf_c,
-        total_count=len(items),
-        timestamp=datetime.now(timezone.utc),
-        integrations=[IntegrationHealthItem(**item) for item in items],
-    )
+        items = await IntegrationHealthService.check_all_integrations(db, persist=True, force_refresh=True, user_id=current_user.id)
+    return _health_response(items)
 
 
 @router.get("/health/{integration_name}", response_model=IntegrationHealthDetailResponse)
@@ -99,11 +93,11 @@ async def get_integration_health_detail(
     current_user: User = Depends(get_current_active_user),
 ):
     """Returns detailed health and recent check history for one integration."""
-    check_result = await IntegrationHealthService.check_single_integration(db, integration_name, persist=True)
+    check_result = await IntegrationHealthService.check_single_integration(db, integration_name, persist=True, user_id=current_user.id)
     if not check_result:
         raise HTTPException(status_code=404, detail=f"Integration '{integration_name}' not found")
     
-    history = IntegrationHealthService.get_integration_history(db, check_result["name"], limit=20)
+    history = await IntegrationHealthService.get_integration_history_async(db, check_result["name"], limit=20)
     return IntegrationHealthDetailResponse(
         integration=IntegrationHealthItem(**check_result),
         history=history,
