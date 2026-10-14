@@ -161,7 +161,7 @@ const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://loca
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -199,14 +199,17 @@ apiClient.interceptors.response.use(
 export const apiService = {
   // Authentication
   async register(data: any): Promise<UserProfile> {
-    const res = await apiClient.post('/auth/register', data);
+    const payload = {
+      ...data,
+      email: typeof data?.email === 'string' ? data.email.trim() : data?.email,
+      name: typeof data?.name === 'string' ? data.name.trim() : data?.name,
+    };
+    const res = await apiClient.post('/auth/register', payload);
     return res.data;
   },
 
-  async login(email: string, _password?: string): Promise<{ access_token: string; token_type: string }> {
-    // FastAPI OAuth2 expects form data for login, but our backend might expect JSON based on UserLogin schema.
-    // Looking at backend/app/schemas/auth.py, UserLogin is a BaseModel, so JSON is expected.
-    const res = await apiClient.post('/auth/login', { email, password: _password });
+  async login(email: string, password?: string): Promise<{ access_token: string; token_type: string }> {
+    const res = await apiClient.post('/auth/login', { email: email.trim(), password });
     return res.data;
   },
 

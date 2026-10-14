@@ -20,11 +20,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const mapUser = (userData: UserProfile): UserProfile => {
-    const data: any = userData;
+    const data: any = userData || {};
     return {
       ...userData,
-      avatarUrl: data.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64',
-      accessTier: data.access_tier || 'Standard Executive',
+      name: data.name || 'User',
+      email: data.email || '',
+      role: data.role || 'Operations Lead',
+      avatarUrl: data.avatar_url || data.avatarUrl || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=64&h=64',
+      accessTier: data.access_tier || data.accessTier || 'Standard Executive',
+      department: data.department || 'Operations',
+      onboarding_completed: Boolean(data.onboarding_completed),
     } as unknown as UserProfile;
   };
 

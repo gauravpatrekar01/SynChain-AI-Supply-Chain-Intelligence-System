@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from sqlalchemy.orm import Session
 from datetime import timedelta
+from typing import Optional
 
 from app.api.deps import get_db, get_current_active_user
 from app.schemas.auth import (
@@ -17,25 +18,50 @@ router = APIRouter()
 @router.post("/register", response_model=UserResponse)
 async def register(
     user_in: UserCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Register a new user.
+    Register a new user. Dispatches verification email in the background.
     """
     auth_service = AuthService(db)
-    user = await auth_service.register_user(user_in)
+    user = await auth_service.register_user(user_in, background_tasks=background_tasks)
     return user
 
 @router.post("/login", response_model=Token)
 async def login(
-    user_in: UserLogin,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
-    OAuth2 compatible token login, get an access token for future requests.
+    OAuth2 and JSON compatible token login.
+    Accepts JSON body ({email, password}) or form data ({username/email, password}).
     """
+    email = None
+    password = None
+
+    content_type = request.headers.get("content-type", "")
+    if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+        form = await request.form()
+        email = form.get("username") or form.get("email")
+        password = form.get("password")
+    else:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                email = body.get("email") or body.get("username")
+                password = body.get("password")
+        except Exception:
+            pass
+
+    if not email or not password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Both email and password are required."
+        )
+
     auth_service = AuthService(db)
-    user = auth_service.authenticate_user(user_in.email, user_in.password)
+    user = auth_service.authenticate_user(email, password)
     
     if not user:
         raise HTTPException(

@@ -17,7 +17,7 @@ export const RegisterForm: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
-      await apiService.register({ name, email, password });
+      await apiService.register({ name: name.trim(), email: email.trim(), password });
       setSuccess(true);
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {

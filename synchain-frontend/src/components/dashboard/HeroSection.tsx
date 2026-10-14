@@ -41,7 +41,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
           </div>
 
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white font-display tracking-tight">
-            {getGreeting()}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-300">{user.name}</span>
+            {getGreeting()}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-cyan-300">{user?.name || 'Supply Chain Leader'}</span>
           </h1>
 
           <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">

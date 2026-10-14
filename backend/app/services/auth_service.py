@@ -17,57 +17,82 @@ class AuthService:
     def __init__(self, db: Session):
         self.db = db
 
-    async def register_user(self, user_in: UserCreate) -> User:
+    async def register_user(self, user_in: UserCreate, background_tasks=None) -> User:
+        clean_email = user_in.email.strip().lower()
         # Check if email exists
-        existing_user = self.db.query(User).filter(User.email == user_in.email.lower()).first()
+        existing_user = self.db.query(User).filter(User.email == clean_email).first()
         if existing_user:
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The user with this email already exists in the system."
             )
         
-        # Create user
-        db_user = User(
-            email=user_in.email.lower(),
-            name=user_in.name,
-            password_hash=get_password_hash(user_in.password),
-            is_active=True,
-            is_verified=False
-        )
-        self.db.add(db_user)
-        self.db.commit()
-        self.db.refresh(db_user)
+        try:
+            # Create user
+            db_user = User(
+                email=clean_email,
+                name=user_in.name.strip(),
+                password_hash=get_password_hash(user_in.password),
+                is_active=True,
+                is_verified=False,
+                role="user"
+            )
+            self.db.add(db_user)
+            self.db.flush()
 
-        # Generate Verification Token
-        raw_token = generate_secure_token()
-        hashed_token = hash_token(raw_token)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-        
-        verify_token_obj = EmailVerificationToken(
-            user_id=db_user.id,
-            token_hash=hashed_token,
-            expires_at=expires_at
-        )
-        self.db.add(verify_token_obj)
-        self.db.commit()
+            # Generate Verification Token
+            raw_token = generate_secure_token()
+            hashed_token = hash_token(raw_token)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+            
+            verify_token_obj = EmailVerificationToken(
+                user_id=db_user.id,
+                token_hash=hashed_token,
+                expires_at=expires_at
+            )
+            self.db.add(verify_token_obj)
+            self.db.commit()
+            self.db.refresh(db_user)
+        except IntegrityError:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The user with this email already exists in the system."
+            )
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to register user: {str(e)}"
+            )
 
-        # Send Email
-        await send_verification_email(db_user.email, raw_token)
+        # Dispatch email asynchronously in background so client receives fast response
+        if background_tasks:
+            background_tasks.add_task(send_verification_email, db_user.email, raw_token)
+        else:
+            try:
+                await send_verification_email(db_user.email, raw_token)
+            except Exception:
+                pass
 
         return db_user
 
     def authenticate_user(self, email: str, password: str) -> User:
-        user = self.db.query(User).filter(User.email == email.lower()).first()
+        clean_email = email.strip().lower()
+        user = self.db.query(User).filter(User.email == clean_email).first()
         if not user:
             return None
         if not verify_password(password, user.password_hash):
             return None
         
         # Update last login
-        user.last_login = datetime.now(timezone.utc)
-        self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
+        try:
+            user.last_login = datetime.now(timezone.utc)
+            self.db.add(user)
+            self.db.commit()
+            self.db.refresh(user)
+        except Exception:
+            self.db.rollback()
         
         return user
 

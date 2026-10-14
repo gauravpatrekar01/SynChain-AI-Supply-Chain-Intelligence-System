@@ -17,7 +17,7 @@ export const LoginForm: React.FC = () => {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email.trim(), password);
       navigate('/dashboard');
     } catch (err: unknown) {
       if (axios.isAxiosError(err)) {
