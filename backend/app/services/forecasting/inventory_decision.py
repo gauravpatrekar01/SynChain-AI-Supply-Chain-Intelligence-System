@@ -1,289 +1,292 @@
-"""
-Inventory Decision Module for SynChain AI.
+"""Inventory safety-stock and reorder-point calculations."""
 
-Provides parameterized, mathematically defensible calculations for:
-- Expected lead-time demand
-- Safety stock buffers
-- Reorder points (ROP)
-- Critical fractile cost optimization
+from __future__ import annotations
 
-Avoids hardcoded arbitrary quantities and explicitly separates
-censored sales observations from unconstrained customer demand.
-"""
-
-from typing import Dict, Any, List, Optional, Tuple, Union
 import math
-import numpy as np
+from statistics import NormalDist
+from typing import Any
 
 
 class InventoryDecisionModule:
-    """
-    Parameterized inventory decision engine for calculating safety stock,
-    reorder points, and lead-time demand buffers.
-    """
-
-    @staticmethod
-    def _norm_ppf(p: float) -> float:
-        """
-        Calculates normal percentage point function (inverse CDF) without external dependencies.
-        Uses Abramowitz and Stegun rational approximation (formula 26.2.23).
-        """
-        if p <= 0.0 or p >= 1.0:
-            raise ValueError(f"Probability must be strictly between 0 and 1, got {p}")
-
-        # Symmetry around p = 0.5
-        if p < 0.5:
-            return -InventoryDecisionModule._norm_ppf(1.0 - p)
-
-        t = math.sqrt(-2.0 * math.log(1.0 - p))
-        c0 = 2.515517
-        c1 = 0.802853
-        c2 = 0.010328
-        d1 = 1.432788
-        d2 = 0.189269
-        d3 = 0.001308
-
-        numerator = c0 + c1 * t + c2 * (t ** 2)
-        denominator = 1.0 + d1 * t + d2 * (t ** 2) + d3 * (t ** 3)
-        return t - (numerator / denominator)
+    """Calculate safety stock, reorder points, and reorder quantities."""
 
     def calculate_inventory_policy(
         self,
-        demand_forecast: Union[List[float], List[Dict[str, Any]]],
+        demand_forecast,
         lead_time_days: int,
         service_level: float = 0.95,
-        cumulative_lead_time_errors: Optional[List[float]] = None,
-        daily_forecast_rmse: Optional[float] = None,
+        cumulative_lead_time_errors: list[float] | None = None,
+        daily_forecast_rmse: float | None = None,
         lead_time_std_days: float = 0.0,
-        holding_cost_per_unit: Optional[float] = None,
-        stockout_cost_per_unit: Optional[float] = None,
-        min_empirical_samples: int = 5,
-        current_stock: Optional[float] = None,
-        standard_reorder_quantity: Optional[float] = None,
-    ) -> Dict[str, Any]:
-        """
-        Calculates expected lead-time demand, safety stock, and reorder point.
+        holding_cost_per_unit: float | None = None,
+        stockout_cost_per_unit: float | None = None,
+        current_stock: float | None = None,
+        standard_reorder_quantity: float | None = None,
+    ) -> dict[str, Any]:
 
-        Parameters
-        ----------
-        demand_forecast : List[float] or List[Dict[str, Any]]
-            Daily forecast predictions across the horizon.
-            If dicts, looks for 'predictedDemandUnits' or 'predicted_demand'.
-        lead_time_days : int
-            Supplier replenishment lead time in days (must be >= 1).
-        service_level : float
-            Target cycle service level CSL in (0.50, 1.00), e.g., 0.90 or 0.95.
-        cumulative_lead_time_errors : Optional[List[float]]
-            Empirical cumulative lead-time forecast errors:
-            e_L = sum_{h=1}^L actual_{t+h} - sum_{h=1}^L forecast_{t+h}.
-            Preferred non-parametric approach when available.
-        daily_forecast_rmse : Optional[float]
-            Single-day out-of-sample forecast RMSE as fallback if empirical cumulative errors missing.
-        lead_time_std_days : float
-            Supplier lead-time standard deviation sigma_LT >= 0.0.
-        holding_cost_per_unit : Optional[float]
-            Unit holding cost per period (must be > 0 if provided).
-        stockout_cost_per_unit : Optional[float]
-            Unit stockout penalty cost per period (must be > 0 if provided).
-        min_empirical_samples : int
-            Minimum required empirical error samples to trust non-parametric distribution.
+        # Validate inputs.
+        if (
+            not isinstance(lead_time_days, int)
+            or not 1 <= lead_time_days <= 365
+        ):
+            raise ValueError(
+                "lead_time_days must be an integer between 1 and 365."
+            )
 
-        Returns
-        -------
-        Dict[str, Any]
-            Inventory decision output including expected lead-time demand, safety stock,
-            reorder point, confidence intervals, cost fractile, and explicit assumptions.
-        """
-        # 1. Input Validation
-        if not isinstance(lead_time_days, int) or lead_time_days < 1:
-            raise ValueError(f"lead_time_days must be an integer >= 1, got {lead_time_days}")
+        if (
+            not math.isfinite(float(service_level))
+            or not 0.5 < service_level < 1.0
+        ):
+            raise ValueError(
+                "service_level must be between 0.5 and 1.0."
+            )
 
-        if not isinstance(service_level, (int, float)) or not (0.50 < service_level < 1.00):
-            raise ValueError(f"service_level must be strictly between 0.50 and 1.00, got {service_level}")
+        if (
+            not math.isfinite(float(lead_time_std_days))
+            or lead_time_std_days < 0
+        ):
+            raise ValueError(
+                "lead_time_std_days must be finite and non-negative."
+            )
 
-        if lead_time_std_days < 0.0:
-            raise ValueError(f"lead_time_std_days cannot be negative, got {lead_time_std_days}")
+        # Support either numeric forecasts or forecast dictionaries.
+        values = []
 
-        if holding_cost_per_unit is not None and holding_cost_per_unit <= 0.0:
-            raise ValueError(f"holding_cost_per_unit must be positive, got {holding_cost_per_unit}")
+        for point in demand_forecast:
 
-        if stockout_cost_per_unit is not None and stockout_cost_per_unit <= 0.0:
-            raise ValueError(f"stockout_cost_per_unit must be positive, got {stockout_cost_per_unit}")
-
-        # Parse forecast sequence
-        if not demand_forecast:
-            raise ValueError("demand_forecast cannot be empty.")
-
-        daily_demands: List[float] = []
-        for item in demand_forecast:
-            if isinstance(item, (int, float)):
-                daily_demands.append(float(item))
-            elif isinstance(item, dict):
-                val = item.get("predictedDemandUnits", item.get("predicted_demand", item.get("demand", None)))
-                if val is None:
-                    raise ValueError(f"Missing predicted demand value in record: {item}")
-                daily_demands.append(float(val))
+            if isinstance(point, dict):
+                raw_value = point.get(
+                    "predictedDemandUnits",
+                    point.get(
+                        "predicted_demand",
+                        point.get("demand"),
+                    ),
+                )
             else:
-                raise TypeError(f"Unsupported demand forecast element type: {type(item)}")
+                raw_value = point
 
-        if any(d < 0.0 for d in daily_demands):
-            raise ValueError("demand_forecast cannot contain negative predictions.")
+            if raw_value is None:
+                raise ValueError(
+                    "Each forecast point must contain a demand value."
+                )
 
-        if len(daily_demands) < lead_time_days:
+            value = float(raw_value)
+
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(
+                    "Forecast demand must be finite and non-negative."
+                )
+
+            values.append(value)
+
+        # We need at least one forecast value for every lead-time day.
+        if len(values) < lead_time_days:
             return {
                 "status": "insufficient_horizon",
                 "error_message": (
-                    f"Forecast horizon ({len(daily_demands)} days) is shorter than "
-                    f"the replenishment lead time ({lead_time_days} days)."
+                    f"Forecast requires at least {lead_time_days} days; "
+                    f"received {len(values)}."
                 ),
-                "expected_lead_time_demand": None,
-                "safety_stock": None,
-                "reorder_point": None
             }
 
-        # 2. Expected Lead-Time Demand (D_L)
-        lead_time_slice = daily_demands[:lead_time_days]
-        expected_lt_demand = float(np.sum(lead_time_slice))
-        mean_daily_forecast = float(np.mean(lead_time_slice))
+        lead_time_values = values[:lead_time_days]
 
-        assumptions: List[str] = [
-            f"Replenishment horizon evaluates {lead_time_days} consecutive forward forecast days.",
-            f"Target Cycle Service Level (CSL) is {service_level * 100:.1f}%.",
-            "Warning: Historical training observations reflect censored sales, which may underestimate unconstrained demand."
-        ]
+        # Expected demand while waiting for replenishment.
+        expected_demand = sum(lead_time_values)
 
-        # 3. Safety Stock Determination
-        safety_stock: float = 0.0
-        method_used: str = "undefined"
-        z_factor: float = self._norm_ppf(service_level)
-        effective_sigma_lt: float = 0.0
+        z_score = NormalDist().inv_cdf(service_level)
 
-        has_empirical_errors = (
-            cumulative_lead_time_errors is not None and 
-            len(cumulative_lead_time_errors) >= min_empirical_samples
+        safety_stock = 0.0
+        uncertainty_sigma = None
+        method_used = "forecast_mean_only"
+
+        # Prefer an empirical distribution of historical lead-time errors.
+        if cumulative_lead_time_errors:
+
+            errors = [
+                float(value)
+                for value in cumulative_lead_time_errors
+            ]
+
+            if any(
+                not math.isfinite(value)
+                for value in errors
+            ):
+                raise ValueError(
+                    "Cumulative lead-time errors must be finite."
+                )
+
+            if len(errors) >= 5:
+
+                ordered_errors = sorted(errors)
+
+                index = min(
+                    len(ordered_errors) - 1,
+                    max(
+                        0,
+                        math.ceil(
+                            service_level * len(ordered_errors)
+                        ) - 1,
+                    ),
+                )
+
+                safety_stock = max(
+                    0.0,
+                    ordered_errors[index],
+                )
+
+                average_error = sum(errors) / len(errors)
+
+                variance = sum(
+                    (value - average_error) ** 2
+                    for value in errors
+                ) / max(1, len(errors) - 1)
+
+                uncertainty_sigma = math.sqrt(variance)
+
+                method_used = (
+                    "empirical_cumulative_lead_time_error_quantile"
+                )
+
+        # If insufficient empirical data exists, use forecast RMSE.
+        if (
+            method_used == "forecast_mean_only"
+            and daily_forecast_rmse is not None
+        ):
+
+            rmse = float(daily_forecast_rmse)
+
+            if not math.isfinite(rmse) or rmse < 0:
+                raise ValueError(
+                    "daily_forecast_rmse must be finite and non-negative."
+                )
+
+            uncertainty_sigma = rmse * math.sqrt(lead_time_days)
+
+            safety_stock = z_score * uncertainty_sigma
+
+            method_used = "gaussian_rmse_approximation"
+
+        # Alternative approximation when lead-time variability is known.
+        if (
+            method_used == "forecast_mean_only"
+            and lead_time_std_days > 0
+        ):
+
+            average_daily_demand = (
+                expected_demand / lead_time_days
+            )
+
+            uncertainty_sigma = (
+                average_daily_demand * lead_time_std_days
+            )
+
+            safety_stock = z_score * uncertainty_sigma
+
+            method_used = "lead_time_variability_approximation"
+
+        reorder_point = expected_demand + safety_stock
+
+        # Validate current inventory.
+        current = (
+            float(current_stock)
+            if current_stock is not None
+            else None
         )
 
-        if has_empirical_errors:
-            # Empirical Quantile Approach (Non-parametric)
-            method_used = "empirical_cumulative_error"
-            errors_arr = np.asarray(cumulative_lead_time_errors, dtype=float)
-            empirical_quantile_error = float(np.percentile(errors_arr, service_level * 100.0))
-            
-            # If lead-time variability exists, augment empirical variance using total variance law
-            if lead_time_std_days > 0.0:
-                emp_var = float(np.var(errors_arr))
-                total_lt_var = emp_var + ((mean_daily_forecast ** 2) * (lead_time_std_days ** 2))
-                effective_sigma_lt = float(math.sqrt(total_lt_var))
-                safety_stock = max(0.0, float(z_factor * effective_sigma_lt))
-                assumptions.append(
-                    f"Augmented empirical error variance ({emp_var:.1f}) with supplier lead-time variability "
-                    f"(sigma_LT = {lead_time_std_days} days) using total variance law."
+        if current is not None:
+            if not math.isfinite(current) or current < 0:
+                raise ValueError(
+                    "current_stock must be finite and non-negative."
                 )
-            else:
-                effective_sigma_lt = float(np.std(errors_arr))
-                safety_stock = max(0.0, empirical_quantile_error)
-                assumptions.append(
-                    f"Safety stock derived non-parametrically from {len(errors_arr)} time-respecting "
-                    f"cumulative {lead_time_days}-day forecast errors."
-                )
-        elif daily_forecast_rmse is not None and daily_forecast_rmse > 0.0:
-            # Parametric Gaussian Fallback
-            method_used = "parametric_analytic"
-            demand_var_lt = float(lead_time_days) * (daily_forecast_rmse ** 2)
-            lt_var_component = (mean_daily_forecast ** 2) * (lead_time_std_days ** 2)
-            total_lt_var = demand_var_lt + lt_var_component
-            effective_sigma_lt = float(math.sqrt(total_lt_var))
 
-            safety_stock = max(0.0, float(z_factor * effective_sigma_lt))
-            assumptions.append(
-                f"Safety stock estimated analytically using Gaussian approximation with daily forecast RMSE "
-                f"({daily_forecast_rmse:.2f}) scaled by sqrt({lead_time_days}) days."
-            )
-            assumptions.append(
-                "Caution: Parametric scaling assumes uncorrelated daily forecast errors. "
-                "In multi-step recursive forecasting, autocorrelation may cause actual lead-time variance to differ."
-            )
-        else:
-            return {
-                "status": "insufficient_uncertainty_data",
-                "error_message": (
-                    "Neither empirical cumulative lead-time errors nor daily forecast RMSE was provided. "
-                    "Cannot defensibly calculate safety stock without quantified forecast uncertainty."
-                ),
-                "expected_lead_time_demand": round(expected_lt_demand, 2),
-                "safety_stock": None,
-                "reorder_point": None,
-                "assumptions": assumptions
-            }
+        # Validate standard replenishment batch size.
+        batch_size = (
+            float(standard_reorder_quantity)
+            if standard_reorder_quantity is not None
+            else 0.0
+        )
 
-        # 4. Reorder Point (ROP = Expected Lead-Time Demand + Safety Stock)
-        reorder_point = max(0.0, expected_lt_demand + safety_stock)
-
-        # 5. Optional Economic Critical Fractile (Newsvendor)
-        critical_fractile = None
-        if holding_cost_per_unit is not None and stockout_cost_per_unit is not None:
-            critical_fractile = round(
-                stockout_cost_per_unit / (stockout_cost_per_unit + holding_cost_per_unit), 4
-            )
-            assumptions.append(
-                f"Economic critical fractile p / (p + h) is {critical_fractile:.4f} "
-                f"(holding cost h = {holding_cost_per_unit}, stockout cost p = {stockout_cost_per_unit})."
+        if not math.isfinite(batch_size) or batch_size < 0:
+            raise ValueError(
+                "standard_reorder_quantity must be finite "
+                "and non-negative."
             )
 
-        # 6. Upper & Lower Uncertainty Bounds for Lead-Time Demand
-        if method_used == "empirical_cumulative_error" and lead_time_std_days == 0.0:
-            lower_err_quantile = float(np.percentile(errors_arr, (1.0 - service_level) * 100.0))
-            demand_lower_bound = max(0.0, expected_lt_demand + lower_err_quantile)
-            demand_upper_bound = expected_lt_demand + safety_stock
-        else:
-            demand_lower_bound = max(0.0, expected_lt_demand - (z_factor * effective_sigma_lt))
-            demand_upper_bound = expected_lt_demand + (z_factor * effective_sigma_lt)
+        reorder_required = (
+            current is not None
+            and current <= reorder_point
+        )
 
-        # 7. Current Stock & Recommended Reorder Quantity (if current_stock provided)
-        reorder_required = None
-        recommended_reorder_qty = None
-        if current_stock is not None:
-            if current_stock < 0.0:
-                raise ValueError(f"current_stock cannot be negative, got {current_stock}")
-            reorder_required = bool(current_stock <= reorder_point)
-            if reorder_required:
-                if standard_reorder_quantity is not None and standard_reorder_quantity > 0:
-                    recommended_reorder_qty = round(float(standard_reorder_quantity), 2)
-                    assumptions.append(
-                        f"Standard batch replenishment order recommended: {recommended_reorder_qty:.0f} units."
-                    )
-                else:
-                    target_ceiling = reorder_point + expected_lt_demand
-                    recommended_reorder_qty = round(max(0.0, target_ceiling - current_stock), 2)
-                    assumptions.append(
-                        f"Continuous review (s, S) replenishment policy recommends restoring buffer to {target_ceiling:.1f} units "
-                        f"(reorder quantity = {recommended_reorder_qty:.1f} units)."
-                    )
-            else:
-                recommended_reorder_qty = 0.0
-                assumptions.append(
-                    f"Current stock ({current_stock:.0f} units) satisfies reorder point ({reorder_point:.1f} units); "
-                    "no replenishment order required at this time."
+        recommended_quantity = 0.0
+
+        if reorder_required and current is not None:
+
+            recommended_quantity = max(
+                0.0,
+                math.ceil(reorder_point - current),
+            )
+
+            if batch_size > 0 and recommended_quantity > 0:
+
+                recommended_quantity = max(
+                    batch_size,
+                    math.ceil(
+                        recommended_quantity / batch_size
+                    ) * batch_size,
                 )
 
         return {
             "status": "success",
-            "lead_time_days": lead_time_days,
-            "target_service_level": service_level,
-            "expected_lead_time_demand": round(expected_lt_demand, 2),
-            "safety_stock": round(safety_stock, 2),
-            "reorder_point": round(reorder_point, 2),
-            "current_stock": round(current_stock, 2) if current_stock is not None else None,
-            "recommended_reorder_quantity": recommended_reorder_qty,
-            "reorder_required": reorder_required,
-            "lead_time_uncertainty_sigma": round(effective_sigma_lt, 2),
-            "lead_time_demand_bounds": {
-                "lower": round(demand_lower_bound, 2),
-                "upper": round(demand_upper_bound, 2),
-                "nominal_coverage_pct": round(service_level * 100.0, 1)
+            "leadTimeDays": lead_time_days,
+            "targetServiceLevel": service_level,
+            "expectedLeadTimeDemand": round(
+                expected_demand,
+                3,
+            ),
+            "safetyStock": round(
+                safety_stock,
+                3,
+            ),
+            "reorderPoint": round(
+                reorder_point,
+                3,
+            ),
+            "currentStock": current,
+            "recommendedReorderQuantity": round(
+                recommended_quantity,
+                3,
+            ),
+            "reorderRequired": reorder_required,
+            "dataSource": "forecast_calculation",
+            "leadTimeUncertaintySigma": (
+                round(uncertainty_sigma, 3)
+                if uncertainty_sigma is not None
+                else None
+            ),
+            "leadTimeDemandBounds": {
+                "lower": max(
+                    0.0,
+                    round(expected_demand - safety_stock, 3),
+                ),
+                "upper": round(
+                    expected_demand + safety_stock,
+                    3,
+                ),
+                "nominalCoveragePct": service_level * 100,
             },
-            "method_used": method_used,
-            "critical_fractile": critical_fractile,
-            "lead_time_std_days": lead_time_std_days,
-            "assumptions": assumptions
+            "methodUsed": method_used,
+            "criticalFractile": None,
+            "leadTimeStdDays": lead_time_std_days,
+            "assumptions": [
+                "Daily forecasts represent demand units per day.",
+                (
+                    "Safety stock uses empirical lead-time errors "
+                    "or an RMSE-based approximation."
+                ),
+                (
+                    "The result is a decision-support estimate, "
+                    "not a guarantee of service level."
+                ),
+            ],
         }

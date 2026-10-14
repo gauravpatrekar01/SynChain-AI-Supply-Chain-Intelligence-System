@@ -1,22 +1,37 @@
 """
 Forecast and Inventory Decision API routes for SynChain AI.
-Provides asynchronous, non-blocking endpoints for demand forecasting and inventory replenishment.
+
+Provides demand forecasting, historical-demand retrieval, and inventory
+replenishment decisions.
 """
 
 import asyncio
+import importlib.metadata
 import logging
 import math
 from pathlib import Path
-from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException, status, Depends
-from sqlalchemy.orm import Session
+from typing import Any, Dict, List
+
 import pandas as pd
 import prophet
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.models.postgres.models import Product, Inventory, Warehouse, Order, OrderItem, Sales
-from app.services.forecasting.prophet_forecast import ForecastingService, MODEL_VERSION
-from app.services.forecasting.inventory_decision import InventoryDecisionModule
+from app.models.postgres.models import (
+    Inventory,
+    OrderItem,
+    Product,
+    Sales,
+    Warehouse,
+)
+from app.services.forecasting.prophet_forecast import (
+    ForecastingService,
+    MODEL_VERSION,
+)
+from app.services.forecasting.inventory_decision import (
+    InventoryDecisionModule,
+)
 from app.schemas.forecasting import (
     DemandForecastRequest,
     DemandForecastResponse,
@@ -25,17 +40,17 @@ from app.schemas.forecasting import (
     ForecastHealthResponse,
     InventoryItemResponse,
     DemandHistoryResponse,
-    DemandHistoryPoint,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["forecasting"])
 
-forecast_service = ForecastingService(interval_width=0.95)
+forecast_service = ForecastingService()
 inventory_module = InventoryDecisionModule()
 
-# Deterministic benchmark series for demo SKU IC-3NM-A18
+
+# Deterministic benchmark data; this is simulated, not real customer sales.
 BENCHMARK_DEMO_DEMAND_A18 = [
     {"date": "2026-09-01", "demand": 1240.0},
     {"date": "2026-09-02", "demand": 1285.0},
@@ -71,53 +86,68 @@ BENCHMARK_DEMO_DEMAND_A18 = [
 
 
 def _get_retail_csv_path() -> Path:
-    """Resolves the retail inventory dataset path across runtime working directories."""
+    """Resolve the retail dataset independently of the current working directory."""
     candidates = [
-        Path(__file__).resolve().parents[4] / "data" / "processed" / "retail_inventory_cleaned.csv",
+        Path(__file__).resolve().parents[4]
+        / "data"
+        / "processed"
+        / "retail_inventory_cleaned.csv",
         Path("data/processed/retail_inventory_cleaned.csv").resolve(),
         Path("../data/processed/retail_inventory_cleaned.csv").resolve(),
         Path("../../data/processed/retail_inventory_cleaned.csv").resolve(),
     ]
-    for p in candidates:
-        if p.is_file():
-            return p
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
     return candidates[0]
+
+
+def _get_prophet_version() -> str:
+    """Return the installed Prophet version when available."""
+    version = getattr(prophet, "__version__", None)
+
+    if version:
+        return str(version)
+
+    try:
+        return importlib.metadata.version("prophet")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 
 @router.get(
     "/forecast/health",
     response_model=ForecastHealthResponse,
     status_code=status.HTTP_200_OK,
-    summary="Forecasting engine status and runtime environment metadata",
+    summary="Forecasting engine status and runtime metadata",
 )
 async def get_forecast_health():
-    """Returns engine readiness and dynamic Prophet version."""
-    prophet_ver = getattr(prophet, "__version__", None)
-    if not prophet_ver:
-        try:
-            import importlib.metadata
-            prophet_ver = importlib.metadata.version("prophet")
-        except Exception:
-            prophet_ver = "unknown"
+    """
+    Return forecasting runtime metadata.
+
+    The available algorithm list describes the configured forecasting stack;
+    it does not claim every listed algorithm is used by every request.
+    """
+    prophet_version = _get_prophet_version()
 
     return {
         "status": "nominal",
-        "engine": "SynChain AI Neural Forecasting Engine",
-        "prophetVersion": prophet_ver,
-        "prophet_version": prophet_ver,
+        "engine": "SynChain AI Forecasting Engine",
+        "prophetVersion": prophet_version,
+        "prophet_version": prophet_version,
         "availableAlgorithms": [
-            f"Prophet (Additive Generalized Model, {prophet_ver})",
-            "AutoRegressive Lags (AR-7) + Linear Trend (Statistical Baseline)",
-            "Empirical Cumulative Lead-Time Quantile Buffer",
-            "Parametric Gaussian Safety Stock Optimizer",
+            f"Prophet ({prophet_version})",
+            "Inventory reorder-point calculation",
+            "Safety-stock calculation",
         ],
         "available_algorithms": [
-            f"Prophet (Additive Generalized Model, {prophet_ver})",
-            "AutoRegressive Lags (AR-7) + Linear Trend (Statistical Baseline)",
-            "Empirical Cumulative Lead-Time Quantile Buffer",
-            "Parametric Gaussian Safety Stock Optimizer",
+            f"Prophet ({prophet_version})",
+            "Inventory reorder-point calculation",
+            "Safety-stock calculation",
         ],
-        "ready": True,
+        "ready": prophet_version != "unknown",
     }
 
 
@@ -125,7 +155,7 @@ async def get_forecast_health():
     "/inventory/items",
     response_model=List[InventoryItemResponse],
     status_code=status.HTTP_200_OK,
-    summary="List available inventory products with stock levels and data source transparency",
+    summary="List inventory items",
 )
 @router.get(
     "/inventory",
@@ -134,162 +164,226 @@ async def get_forecast_health():
     include_in_schema=False,
 )
 def get_inventory_items_route(db: Session = Depends(get_db)):
-    """
-    Returns available supply chain inventory items.
-    Explicitly labels:
-    - 'postgresql_live': Live records in PostgreSQL (note: 0 sales observations in DB).
-    - 'retail_dataset_actual': Verified historical dataset records with 731 days of genuine sales.
-    - 'deterministic_demo': Designated benchmark items with synthetic baseline.
-    """
+    """Return database inventory and explicitly identified dataset/demo items."""
     items: List[Dict[str, Any]] = []
 
-    # 1. Query PostgreSQL Live Inventory
+    # 1. Live PostgreSQL inventory.
     try:
-        inv_records = (
+        records = (
             db.query(Inventory, Product, Warehouse)
             .join(Product, Inventory.product_id == Product.id)
             .join(Warehouse, Inventory.warehouse_id == Warehouse.id)
             .all()
         )
-        for inv, prod, wh in inv_records:
+
+        for inventory, product, warehouse in records:
             items.append({
-                "sku": prod.sku,
-                "name": prod.name,
-                "category": prod.category or "Components",
-                "warehouse": wh.name,
-                "warehouseLocation": wh.location or wh.name,
-                "currentStock": int(inv.stock_quantity),
-                "safetyStock": int(inv.safety_stock_level),
-                "reorderLevel": int(inv.reorder_level),
-                "reorderQuantity": int(inv.reorder_quantity or 100),
-                "unitPrice": float(prod.price or 0.0),
+                "sku": product.sku,
+                "name": product.name,
+                "category": product.category or "Components",
+                "warehouse": warehouse.name,
+                "warehouseLocation": warehouse.location or warehouse.name,
+                "currentStock": int(inventory.stock_quantity or 0),
+                "safetyStock": int(inventory.safety_stock_level or 0),
+                "reorderLevel": int(inventory.reorder_level or 0),
+                "reorderQuantity": int(inventory.reorder_quantity or 100),
+                "unitPrice": float(product.price or 0.0),
                 "leadTimeDays": 7,
                 "dataSource": "postgresql_live",
                 "hasHistoricalDemand": False,
-                "description": f"Live database record in {wh.name} (0 historical sales observations)",
+                "description": (
+                    f"Live database inventory record in {warehouse.name}. "
+                    "Historical demand must be retrieved separately."
+                ),
             })
-    except Exception as e:
-        logger.warning("PostgreSQL inventory query error: %s", e)
 
-    # 2. Verified actual historical products from retail dataset (P0001 - P0005)
+    except Exception:
+        logger.exception("Unable to retrieve PostgreSQL inventory.")
+        # Do not silently substitute fake PostgreSQL inventory.
+        # Dataset/demo items may still be returned below.
+
+    # 2. Retail dataset products.
     retail_csv = _get_retail_csv_path()
+
     if retail_csv.is_file():
         actual_catalog = [
-            ("P0001", "Groceries Item P0001", "Groceries", "Austin Retail Hub S001", "Austin, TX", 231, 135, 150, 200, 33.50, 7),
-            ("P0002", "Toys Item P0002", "Toys", "Dallas Retail Hub S001", "Dallas, TX", 204, 144, 160, 200, 63.01, 7),
-            ("P0003", "Toys Item P0003", "Toys", "West Regional Hub S001", "Phoenix, AZ", 102, 74, 90, 150, 27.99, 5),
-            ("P0004", "Toys Item P0004", "Toys", "North Distribution Hub S001", "Chicago, IL", 469, 62, 100, 150, 32.72, 7),
-            ("P0005", "Electronics Item P0005", "Electronics", "East Regional SuperHub S001", "Memphis, TN", 166, 10, 50, 100, 73.64, 10),
+            ("P0001", "Groceries Item P0001", "Groceries",
+             "Austin Retail Hub S001", "Austin, TX",
+             231, 135, 150, 200, 33.50, 7),
+            ("P0002", "Toys Item P0002", "Toys",
+             "Dallas Retail Hub S001", "Dallas, TX",
+             204, 144, 160, 200, 63.01, 7),
+            ("P0003", "Toys Item P0003", "Toys",
+             "West Regional Hub S001", "Phoenix, AZ",
+             102, 74, 90, 150, 27.99, 5),
+            ("P0004", "Toys Item P0004", "Toys",
+             "North Distribution Hub S001", "Chicago, IL",
+             469, 62, 100, 150, 32.72, 7),
+            ("P0005", "Electronics Item P0005", "Electronics",
+             "East Regional SuperHub S001", "Memphis, TN",
+             166, 10, 50, 100, 73.64, 10),
         ]
-        for sku, name, cat, wh_name, loc, stock, safety, rop, rop_qty, price, lt in actual_catalog:
+
+        for (
+            sku, name, category, warehouse, location,
+            stock, safety, reorder_level, reorder_quantity, price, lead_time,
+        ) in actual_catalog:
             items.append({
                 "sku": sku,
                 "name": name,
-                "category": cat,
-                "warehouse": wh_name,
-                "warehouseLocation": loc,
+                "category": category,
+                "warehouse": warehouse,
+                "warehouseLocation": location,
                 "currentStock": stock,
                 "safetyStock": safety,
-                "reorderLevel": rop,
-                "reorderQuantity": rop_qty,
+                "reorderLevel": reorder_level,
+                "reorderQuantity": reorder_quantity,
                 "unitPrice": price,
-                "leadTimeDays": lt,
+                "leadTimeDays": lead_time,
                 "dataSource": "retail_dataset_actual",
                 "hasHistoricalDemand": True,
-                "description": "731 days of verified daily customer sales & inventory observations",
+                "description": (
+                    "Retail dataset product. Historical observations are "
+                    "loaded from the dataset when requested."
+                ),
             })
 
-    # 3. Explicitly designated benchmark demo SKUs
+    # 3. Deterministic demo products.
     demo_catalog = [
-        ("IC-3NM-A18", "3nm Ultra AI Neural Processor", "Logic Silicon", "Giga Austin Warehouse", "Austin, TX", 45000, 30000, 35000, 15000, 480.0, 7),
-        ("HBM3E-24G", "High Bandwidth Memory 24GB", "Memory IC", "Memphis SuperHub", "Memphis, TN", 18500, 25000, 28000, 10000, 320.0, 14),
+        ("IC-3NM-A18", "3nm Ultra AI Neural Processor",
+         "Logic Silicon", "Giga Austin Warehouse", "Austin, TX",
+         45000, 30000, 35000, 15000, 480.0, 7),
+        ("HBM3E-24G", "High Bandwidth Memory 24GB",
+         "Memory IC", "Memphis SuperHub", "Memphis, TN",
+         18500, 25000, 28000, 10000, 320.0, 14),
     ]
-    for sku, name, cat, wh_name, loc, stock, safety, rop, rop_qty, price, lt in demo_catalog:
+
+    for (
+        sku, name, category, warehouse, location,
+        stock, safety, reorder_level, reorder_quantity, price, lead_time,
+    ) in demo_catalog:
         items.append({
             "sku": sku,
             "name": name,
-            "category": cat,
-            "warehouse": wh_name,
-            "warehouseLocation": loc,
+            "category": category,
+            "warehouse": warehouse,
+            "warehouseLocation": location,
             "currentStock": stock,
             "safetyStock": safety,
-            "reorderLevel": rop,
-            "reorderQuantity": rop_qty,
+            "reorderLevel": reorder_level,
+            "reorderQuantity": reorder_quantity,
             "unitPrice": price,
-            "leadTimeDays": lt,
+            "leadTimeDays": lead_time,
             "dataSource": "deterministic_demo",
             "hasHistoricalDemand": True,
-            "description": "Deterministic neural benchmark time-series simulation",
+            "description": "Deterministic simulated benchmark demand.",
         })
 
-    return items
+    # Avoid returning duplicate SKUs if a database happens to contain a
+    # SKU that also appears in the demo or retail catalogue.
+    unique_items: Dict[str, Dict[str, Any]] = {}
+
+    for item in items:
+        unique_items.setdefault(item["sku"].upper(), item)
+
+    return list(unique_items.values())
 
 
 @router.get(
     "/forecast/demand-history/{sku}",
     response_model=DemandHistoryResponse,
     status_code=status.HTTP_200_OK,
-    summary="Retrieve verified daily historical demand observations for a SKU",
+    summary="Retrieve historical demand observations",
 )
 def get_demand_history_route(
     sku: str,
     store_id: str = "S001",
     limit: int = 90,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    Returns verified historical demand observations for time-series forecasting.
-    - Verified Retail SKUs ('P0001'..'P0020'): Loads genuine historical daily sales from retail dataset.
-    - Benchmark Demo SKUs ('IC-3NM-A18', 'HBM3E-24G'): Explicitly simulated reproducible series.
-    - PostgreSQL Live SKUs ('SYN-TEST-*'): Rejects forecasting if daily history is missing (no silent faking).
-    - Unknown SKUs: Returns 404.
-    """
-    clean_sku = sku.strip()
+    """Retrieve actual retail history or explicitly labelled demo history."""
+    clean_sku = sku.strip().upper()
 
-    # Case A: Retail Dataset Actual SKUs
-    if clean_sku.upper().startswith("P") and clean_sku.upper()[1:].isdigit():
+    if not clean_sku:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="SKU cannot be empty.",
+        )
+
+    if limit < 1 or limit > 731:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="limit must be between 1 and 731.",
+        )
+
+    # Retail dataset products.
+    if clean_sku.startswith("P") and clean_sku[1:].isdigit():
         retail_csv = _get_retail_csv_path()
+
         if not retail_csv.is_file():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Historical dataset file not found at {retail_csv}",
+                detail=f"Retail dataset not found: {retail_csv}",
             )
+
         try:
-            from app.services.forecasting.data_loader import load_retail_inventory_series
+            from app.services.forecasting.data_loader import (
+                load_retail_inventory_series,
+            )
+
             df = load_retail_inventory_series(
                 csv_path=str(retail_csv),
                 store_id=store_id,
-                product_id=clean_sku.upper(),
+                product_id=clean_sku,
                 target_col="units_sold",
             )
-            df = df.tail(limit if limit > 0 else 90)
+
+            df = df.tail(limit)
+
             points = [
-                {"date": str(row["date"])[:10], "demand": float(row["demand"])}
+                {
+                    "date": str(row["date"])[:10],
+                    "demand": float(row["demand"]),
+                }
                 for _, row in df.iterrows()
             ]
+
+            if not points:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"No retail demand observations found for {clean_sku}.",
+                )
+
             return {
-                "sku": clean_sku.upper(),
-                "productName": f"Retail Product {clean_sku.upper()}",
+                "sku": clean_sku,
+                "productName": f"Retail Product {clean_sku}",
                 "dataSource": "retail_dataset_actual",
                 "isSimulated": False,
                 "totalObservations": len(points),
                 "storeId": store_id,
                 "historicalData": points,
             }
-        except ValueError as e:
+
+        except HTTPException:
+            raise
+        except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
+                detail=str(exc),
+            ) from exc
+        except (OSError, KeyError, pd.errors.ParserError):
+            logger.exception("Failed to read retail demand for %s", clean_sku)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The retail dataset could not be read.",
             )
 
-    # Case B: Deterministic Benchmark Demo SKUs
-    if clean_sku.upper() == "IC-3NM-A18":
-        points = [
-            {"date": pt["date"], "demand": float(pt["demand"])}
-            for pt in BENCHMARK_DEMO_DEMAND_A18
-        ]
+    # Deterministic demo SKU.
+    if clean_sku == "IC-3NM-A18":
+        points = [dict(point) for point in BENCHMARK_DEMO_DEMAND_A18]
+
         return {
-            "sku": "IC-3NM-A18",
+            "sku": clean_sku,
             "productName": "3nm Ultra AI Neural Processor",
             "dataSource": "deterministic_demo",
             "isSimulated": True,
@@ -298,15 +392,29 @@ def get_demand_history_route(
             "historicalData": points,
         }
 
-    if clean_sku.upper() == "HBM3E-24G":
+    if clean_sku == "HBM3E-24G":
         base_date = pd.Timestamp("2026-07-24")
         points = []
-        for i in range(30):
-            d_str = (base_date + pd.Timedelta(days=i)).strftime("%Y-%m-%d")
-            val = round(220.0 + 35.0 * math.sin(i * 0.45) + (i % 7) * 4.0, 1)
-            points.append({"date": d_str, "demand": val})
+
+        for index in range(30):
+            date_string = (
+                base_date + pd.Timedelta(days=index)
+            ).strftime("%Y-%m-%d")
+
+            value = round(
+                220.0
+                + 35.0 * math.sin(index * 0.45)
+                + (index % 7) * 4.0,
+                1,
+            )
+
+            points.append({
+                "date": date_string,
+                "demand": value,
+            })
+
         return {
-            "sku": "HBM3E-24G",
+            "sku": clean_sku,
             "productName": "High Bandwidth Memory 24GB",
             "dataSource": "deterministic_demo",
             "isSimulated": True,
@@ -315,26 +423,35 @@ def get_demand_history_route(
             "historicalData": points,
         }
 
-    # Case C: PostgreSQL Live Products
-    prod = db.query(Product).filter(Product.sku == clean_sku).first()
-    if prod:
-        sales_count = db.query(Sales).filter(Sales.product_id == prod.id).count()
-        order_items_count = db.query(OrderItem).filter(OrderItem.product_id == prod.id).count()
+    # Registered PostgreSQL product without adequate daily history.
+    product = db.query(Product).filter(Product.sku == clean_sku).first()
+
+    if product:
+        sales_count = (
+            db.query(Sales)
+            .filter(Sales.product_id == product.id)
+            .count()
+        )
+        order_items_count = (
+            db.query(OrderItem)
+            .filter(OrderItem.product_id == product.id)
+            .count()
+        )
+
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                f"Product '{clean_sku}' ({prod.name}) is registered in PostgreSQL, but has insufficient "
-                f"historical demand observations in the database ({sales_count} sales records, "
-                f"{order_items_count} batch order records). A minimum of 5 daily continuous observations "
-                f"is required to generate an empirical or statistical forecast. SynChain AI never silently "
-                "substitutes synthetic data for live production items."
+                f"Product '{clean_sku}' ({product.name}) exists in PostgreSQL, "
+                f"but historical demand is insufficient: {sales_count} sales "
+                f"records and {order_items_count} order-item records. "
+                "At least five valid daily observations are required. "
+                "Synthetic data will not be substituted for live products."
             ),
         )
 
-    # Case D: Unknown SKU
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Product SKU '{clean_sku}' was not found in live inventory or available datasets.",
+        detail=f"Product SKU '{clean_sku}' was not found.",
     )
 
 
@@ -342,20 +459,17 @@ def get_demand_history_route(
     "/forecast/demand",
     response_model=DemandForecastResponse,
     status_code=status.HTTP_200_OK,
-    summary="Generate enterprise demand forecast with Prophet and baseline fallback",
+    summary="Generate demand forecast",
 )
 @router.post(
     "/forecast",
     response_model=DemandForecastResponse,
     status_code=status.HTTP_200_OK,
     include_in_schema=True,
-    summary="Legacy demand forecast endpoint (backward-compatible)",
+    summary="Legacy demand forecast endpoint",
 )
 async def generate_demand_forecast_route(request: DemandForecastRequest):
-    """
-    Executes time-series demand forecasting asynchronously using Prophet with
-    automatic fallback to statistical AutoRegressive baseline for short series.
-    """
+    """Generate a forecast without blocking the event loop."""
     try:
         result = await asyncio.to_thread(
             forecast_service.generate_demand_forecast,
@@ -363,27 +477,34 @@ async def generate_demand_forecast_route(request: DemandForecastRequest):
             horizon=request.horizonDays,
             evaluate=request.evaluate,
         )
+
         result["productId"] = request.productId
         result["product_id"] = request.productId
         return result
-    except ValueError as e:
+
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
-        )
-    except Exception as e:
-        logger.exception("Forecast computation failure: %s", e)
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+        logger.exception("Forecast computation failed.")
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Forecasting computation failed for the provided time series. Ensure valid dates, non-negative values, and sufficient observations.",
-        )
+            detail=(
+                "Forecast computation failed. Check the historical dates, "
+                "demand values, and Prophet installation."
+            ),
+        ) from exc
 
 
 @router.post(
     "/inventory/reorder-policy",
     response_model=InventoryPolicyResponse,
     status_code=status.HTTP_200_OK,
-    summary="Compute inventory replenishment policy and safety stock buffers",
+    summary="Calculate inventory replenishment policy",
 )
 @router.post(
     "/forecast/inventory/reorder-policy",
@@ -391,12 +512,10 @@ async def generate_demand_forecast_route(request: DemandForecastRequest):
     status_code=status.HTTP_200_OK,
     include_in_schema=False,
 )
-async def calculate_inventory_reorder_policy_route(request: InventoryPolicyRequest):
-    """
-    Calculates expected lead-time demand, safety stock, and reorder point (ROP)
-    using empirical lead-time quantile errors or parametric RMSE scaling.
-    Evaluates current stock against ROP to recommend replenishment quantities.
-    """
+async def calculate_inventory_reorder_policy_route(
+    request: InventoryPolicyRequest,
+):
+    """Calculate lead-time demand, safety stock, and reorder point."""
     try:
         result = await asyncio.to_thread(
             inventory_module.calculate_inventory_policy,
@@ -412,25 +531,35 @@ async def calculate_inventory_reorder_policy_route(request: InventoryPolicyReque
             standard_reorder_quantity=request.standardReorderQuantity,
         )
 
-        if result.get("status") in ("insufficient_horizon", "insufficient_uncertainty_data"):
+        if result.get("status") in {
+            "insufficient_horizon",
+            "insufficient_uncertainty_data",
+        }:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=result.get("error_message", "Invalid inventory planning parameters."),
+                detail=result.get(
+                    "error_message",
+                    "Insufficient data to calculate the inventory policy.",
+                ),
             )
 
         result["productId"] = request.productId
         result["product_id"] = request.productId
         return result
-    except ValueError as e:
+
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e),
-        )
+            detail=str(exc),
+        ) from exc
+
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception("Inventory policy computation failure: %s", e)
+
+    except Exception as exc:
+        logger.exception("Inventory policy calculation failed.")
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Inventory decision policy computation failed. Check forecast values and lead-time bounds.",
-        )
+            detail="Inventory policy calculation failed.",
+        ) from exc
