@@ -68,7 +68,7 @@ class IntegrationHealthItem(BaseModel):
 
 
 class AllIntegrationsHealthResponse(BaseModel):
-    overall_status: Literal["healthy", "degraded", "unhealthy"]
+    overall_status: Literal["healthy", "degraded", "unhealthy", "unknown"]
     healthy_count: int
     degraded_count: int
     unhealthy_count: int

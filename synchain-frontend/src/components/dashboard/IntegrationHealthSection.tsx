@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
 import {
   Activity,
   AlertTriangle,
@@ -20,11 +21,31 @@ import {
 } from 'lucide-react';
 import { apiService } from '../../services/api';
 import { soundFX } from '../../services/audioService';
+import { mergeIntegrationHealth } from './integrationHealthState';
 import {
   AllIntegrationsHealthResponse,
   IntegrationHealthDetailResponse,
   IntegrationConnectionStatus,
+  ConfigStatus,
 } from '../../types';
+
+function requestError(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    if (error.response?.status === 401) return 'Your session has expired. Sign in again to check integrations.';
+    if (error.response?.status === 403) return 'Your account cannot access integration diagnostics.';
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return 'The health check timed out. The last available results are retained; try again.';
+    }
+    if (!error.response) return 'Cannot reach the health monitor. Check that the backend is running and try again.';
+  }
+  return fallback;
+}
+
+function formatCheckedAt(value?: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleString();
+}
 
 export const IntegrationHealthSection: React.FC = () => {
   const [healthData, setHealthData] = useState<AllIntegrationsHealthResponse | null>(null);
@@ -34,90 +55,157 @@ export const IntegrationHealthSection: React.FC = () => {
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
   const [detailData, setDetailData] = useState<IntegrationHealthDetailResponse | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(false);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [error, setError] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const summaryRequest = useRef(0);
+  const detailRequest = useRef(0);
+  const requestInProgress = useRef(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const isBusy = isLoading || isCheckingAll || checkingName !== null;
+  const lastUpdated = formatCheckedAt(healthData?.timestamp);
 
-  useEffect(() => {
-    loadHealthData();
-  }, []);
-
-  const loadHealthData = async () => {
+  const loadHealthData = useCallback(async () => {
+    if (requestInProgress.current) return;
+    requestInProgress.current = true;
+    const request = ++summaryRequest.current;
     setIsLoading(true);
+    setError(null);
     try {
       const data = await apiService.getIntegrationsHealth();
-      setHealthData(data);
-      setLastUpdated(new Date());
+      if (request === summaryRequest.current) {
+        setHealthData(data);
+        window.dispatchEvent(new Event('synchain_integration_health_updated'));
+      }
     } catch (err) {
-      console.error('Failed to load integration health data', err);
+      if (request === summaryRequest.current) setError(requestError(err, 'Unable to load integration health. Please try again.'));
     } finally {
-      setIsLoading(false);
+      if (request === summaryRequest.current) {
+        requestInProgress.current = false;
+        setIsLoading(false);
+      }
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void loadHealthData();
+    return () => {
+      summaryRequest.current += 1;
+      detailRequest.current += 1;
+      requestInProgress.current = false;
+    };
+  }, [loadHealthData]);
+
+  const closeDiagnostics = useCallback(() => {
+    detailRequest.current += 1;
+    setSelectedIntegration(null);
+    setDetailData(null);
+    setDetailError(null);
+    setIsDetailLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedIntegration) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    modalRef.current?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeDiagnostics();
+      if (event.key !== 'Tab') return;
+      const buttons = modalRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+      if (!buttons?.length) return;
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === modalRef.current)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      previousFocus?.focus();
+    };
+  }, [selectedIntegration, closeDiagnostics]);
 
   const handleCheckAll = async () => {
+    if (requestInProgress.current) return;
+    requestInProgress.current = true;
+    const request = ++summaryRequest.current;
     soundFX.playClick();
     setIsCheckingAll(true);
+    setError(null);
     try {
       const data = await apiService.triggerHealthCheck();
+      if (request !== summaryRequest.current) return;
       setHealthData(data);
-      setLastUpdated(new Date());
+      window.dispatchEvent(new Event('synchain_integration_health_updated'));
       soundFX.playSuccess();
     } catch (err) {
+      if (request !== summaryRequest.current) return;
       soundFX.playError();
-      console.error('Check all integrations failed', err);
+      setError(requestError(err, 'Unable to refresh integration health. The last available results are shown.'));
     } finally {
-      setIsCheckingAll(false);
+      if (request === summaryRequest.current) {
+        requestInProgress.current = false;
+        setIsCheckingAll(false);
+      }
     }
   };
 
   const handleCheckSingle = async (name: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (requestInProgress.current) return;
+    requestInProgress.current = true;
+    const request = ++summaryRequest.current;
     soundFX.playClick();
     setCheckingName(name);
+    setError(null);
     try {
       const data = await apiService.triggerHealthCheck(name);
-      if (data.integrations.length > 0) {
-        const updatedItem = data.integrations[0];
-        setHealthData((prev) => {
-          if (!prev) return prev;
-          const newIntegrations = prev.integrations.map((item) =>
-            item.name.toLowerCase() === updatedItem.name.toLowerCase() ? updatedItem : item
-          );
-          const healthy_c = newIntegrations.filter((i) => i.connection_status === 'healthy').length;
-          const degraded_c = newIntegrations.filter((i) => i.connection_status === 'degraded').length;
-          const unhealthy_c = newIntegrations.filter((i) => i.connection_status === 'unhealthy').length;
-          return {
-            ...prev,
-            healthy_count: healthy_c,
-            degraded_count: degraded_c,
-            unhealthy_count: unhealthy_c,
-            integrations: newIntegrations,
-          };
-        });
-      }
+      if (request !== summaryRequest.current) return;
+      setHealthData((prev) => mergeIntegrationHealth(prev, data));
+      window.dispatchEvent(new Event('synchain_integration_health_updated'));
       soundFX.playSuccess();
     } catch (err) {
+      if (request !== summaryRequest.current) return;
       soundFX.playError();
-      console.error(`Check for ${name} failed`, err);
+      setError(requestError(err, `Unable to check ${name}. The last available results are shown.`));
     } finally {
-      setCheckingName(null);
+      if (request === summaryRequest.current) {
+        requestInProgress.current = false;
+        setCheckingName(null);
+      }
     }
   };
 
   const openDiagnostics = async (name: string) => {
     soundFX.playClick();
+    const request = ++detailRequest.current;
     setSelectedIntegration(name);
+    setDetailData(null);
+    setDetailError(null);
     setIsDetailLoading(true);
     try {
       const detail = await apiService.getIntegrationHealthDetail(name);
-      setDetailData(detail);
+      if (request === detailRequest.current) setDetailData(detail);
     } catch (err) {
-      console.error('Failed to load diagnostics', err);
+      if (request === detailRequest.current) setDetailError(requestError(err, `Unable to load diagnostics for ${name}. Please try again.`));
     } finally {
-      setIsDetailLoading(false);
+      if (request === detailRequest.current) setIsDetailLoading(false);
     }
   };
 
-  const getStatusBadge = (status: IntegrationConnectionStatus) => {
+  const getStatusBadge = (status: IntegrationConnectionStatus, configuration?: ConfigStatus, enabled = true) => {
+    if (!enabled || configuration === 'not_configured') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/20">
+          <HelpCircle className="w-3 h-3" />
+          {configuration === 'not_configured' ? 'Not Configured' : 'Disabled'}
+        </span>
+      );
+    }
     switch (status) {
       case 'healthy':
         return (
@@ -144,7 +232,7 @@ export const IntegrationHealthSection: React.FC = () => {
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/20">
             <HelpCircle className="w-3 h-3 text-slate-400" />
-            Not Configured
+            Not Verified
           </span>
         );
     }
@@ -185,12 +273,12 @@ export const IntegrationHealthSection: React.FC = () => {
               <h2 className="text-lg font-bold text-slate-100 tracking-tight">API Integration Health Monitor</h2>
               {healthData && (
                 <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700/60 font-mono">
-                  {healthData.healthy_count}/{healthData.total_count} Live
+                  {healthData.healthy_count}/{healthData.total_count} Healthy
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Real-time connectivity diagnostics, response latency, and source data freshness across external services
+              Latest connectivity checks, response latency, and reported data freshness across external services
             </p>
           </div>
         </div>
@@ -198,11 +286,11 @@ export const IntegrationHealthSection: React.FC = () => {
         <div className="flex items-center gap-3">
           <span className="hidden md:inline-flex items-center gap-1.5 text-xs text-slate-400 font-mono">
             <Clock className="w-3.5 h-3.5 text-slate-500" />
-            Updated {lastUpdated.toLocaleTimeString()}
+            {lastUpdated ? `Last checked ${lastUpdated}` : 'Awaiting first check'}
           </span>
           <button
             onClick={handleCheckAll}
-            disabled={isCheckingAll}
+            disabled={isBusy}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 cursor-pointer active:scale-95"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isCheckingAll ? 'animate-spin' : ''}`} />
@@ -211,9 +299,18 @@ export const IntegrationHealthSection: React.FC = () => {
         </div>
       </div>
 
+      {error && (
+        <div role="alert" className="flex items-center justify-between gap-4 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-sm text-rose-200">
+          <span className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" />{error}</span>
+          <button type="button" onClick={loadHealthData} disabled={isBusy} className="shrink-0 px-3 py-1.5 rounded-lg border border-rose-500/30 hover:bg-rose-500/10 disabled:opacity-50">
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Integrations Grid */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {isLoading && !healthData ? (
+        <div role="status" aria-label="Loading integration health" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[...Array(7)].map((_, i) => (
             <div
               key={i}
@@ -244,10 +341,9 @@ export const IntegrationHealthSection: React.FC = () => {
                 : 'text-rose-400';
 
             return (
-              <div
+              <article
                 key={item.name}
-                onClick={() => openDiagnostics(item.name)}
-                className="group relative p-5 rounded-2xl bg-slate-900/60 hover:bg-slate-900/90 backdrop-blur-xl border border-slate-800/80 hover:border-slate-700 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-xl hover:shadow-blue-900/10 flex flex-col justify-between"
+                className="group relative p-5 rounded-2xl bg-slate-900/60 hover:bg-slate-900/90 backdrop-blur-xl border border-slate-800/80 hover:border-slate-700 transition-all duration-200 shadow-lg hover:shadow-xl hover:shadow-blue-900/10 flex flex-col justify-between"
               >
                 <div>
                   {/* Top Bar: Icon + Status */}
@@ -255,7 +351,7 @@ export const IntegrationHealthSection: React.FC = () => {
                     <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 group-hover:scale-105 transition-transform">
                       {getCategoryIcon(item.category)}
                     </div>
-                    {getStatusBadge(item.connection_status)}
+                    {getStatusBadge(item.connection_status, item.configuration_status, item.is_enabled)}
                   </div>
 
                   {/* Title & Category */}
@@ -269,13 +365,13 @@ export const IntegrationHealthSection: React.FC = () => {
                     <div>
                       <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Latency</span>
                       <span className={`font-mono font-medium ${latencyColor}`}>
-                        {item.response_time_ms > 0 ? `${item.response_time_ms} ms` : '—'}
+                        {item.response_time_ms > 0 ? `${Math.round(item.response_time_ms)} ms` : '—'}
                       </span>
                     </div>
                     <div>
                       <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Data Freshness</span>
                       <span className="font-medium text-slate-300 truncate block">
-                        {item.data_freshness || 'Active'}
+                        {item.data_freshness || 'Not reported'}
                       </span>
                     </div>
                   </div>
@@ -293,32 +389,33 @@ export const IntegrationHealthSection: React.FC = () => {
                 <div className="mt-4 pt-3 border-t border-slate-800/40 flex items-center justify-between">
                   <button
                     onClick={(e) => handleCheckSingle(item.name, e)}
-                    disabled={isCheckingThis}
+                    disabled={isBusy}
+                    aria-label={`Check ${item.name} now`}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-750 hover:text-white border border-slate-700/60 transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     <RefreshCw className={`w-3 h-3 ${isCheckingThis ? 'animate-spin text-blue-400' : ''}`} />
                     {isCheckingThis ? 'Testing...' : 'Check Now'}
                   </button>
 
-                  <span className="inline-flex items-center gap-0.5 text-xs text-slate-400 group-hover:text-blue-400 font-medium transition-colors">
+                  <button type="button" onClick={() => openDiagnostics(item.name)} aria-label={`View diagnostics for ${item.name}`} className="inline-flex items-center gap-0.5 text-xs text-slate-400 hover:text-blue-400 font-medium transition-colors cursor-pointer">
                     Diagnostics
                     <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                  </span>
+                  </button>
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
-      ) : (
+      ) : !error ? (
         <div className="p-8 text-center rounded-2xl bg-slate-900/40 border border-slate-800 text-slate-400">
           <p>No active integrations discovered.</p>
         </div>
-      )}
+      ) : null}
 
       {/* Diagnostics Modal */}
       {selectedIntegration && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl bg-slate-900 border border-slate-800 p-6 sm:p-8 shadow-2xl space-y-6 text-slate-100">
+          <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="integration-diagnostics-title" tabIndex={-1} className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl bg-slate-900 border border-slate-800 p-6 sm:p-8 shadow-2xl space-y-6 text-slate-100">
             {/* Modal Header */}
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
@@ -326,40 +423,43 @@ export const IntegrationHealthSection: React.FC = () => {
                   {detailData ? getCategoryIcon(detailData.integration.category) : <Activity className="w-6 h-6" />}
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold tracking-tight text-white">{selectedIntegration}</h3>
+                  <h3 id="integration-diagnostics-title" className="text-xl font-bold tracking-tight text-white">{selectedIntegration}</h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Diagnostic Telemetry &amp; Historical Health Verification
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => {
-                  setSelectedIntegration(null);
-                  setDetailData(null);
-                }}
+                onClick={closeDiagnostics}
+                aria-label="Close integration diagnostics"
                 className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {isDetailLoading || !detailData ? (
-              <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
+            {isDetailLoading ? (
+              <div role="status" className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
                 <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />
-                <p className="text-sm">Running live diagnostic telemetry...</p>
+                <p className="text-sm">Loading integration diagnostics...</p>
               </div>
-            ) : (
+            ) : detailError ? (
+              <div role="alert" className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-sm text-rose-200 space-y-3">
+                <p>{detailError}</p>
+                <button type="button" onClick={() => openDiagnostics(selectedIntegration)} className="px-3 py-1.5 rounded-lg border border-rose-500/30 hover:bg-rose-500/10">Retry diagnostics</button>
+              </div>
+            ) : detailData ? (
               <div className="space-y-6">
                 {/* Status & Latency Banner */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 text-xs">
                   <div>
                     <span className="text-slate-400 uppercase tracking-wider text-[10px] block">Connection</span>
-                    <div className="mt-1">{getStatusBadge(detailData.integration.connection_status)}</div>
+                    <div className="mt-1">{getStatusBadge(detailData.integration.connection_status, detailData.integration.configuration_status, detailData.integration.is_enabled)}</div>
                   </div>
                   <div>
                     <span className="text-slate-400 uppercase tracking-wider text-[10px] block">Response Latency</span>
                     <span className="mt-1 font-mono font-bold text-sm text-slate-200 block">
-                      {detailData.integration.response_time_ms} ms
+                      {detailData.integration.response_time_ms > 0 ? `${Math.round(detailData.integration.response_time_ms)} ms` : '—'}
                     </span>
                   </div>
                   <div>
@@ -371,7 +471,7 @@ export const IntegrationHealthSection: React.FC = () => {
                   <div>
                     <span className="text-slate-400 uppercase tracking-wider text-[10px] block">Freshness</span>
                     <span className="mt-1 font-medium text-slate-300 block">
-                      {detailData.integration.data_freshness || 'Operational'}
+                      {detailData.integration.data_freshness || 'Not reported'}
                     </span>
                   </div>
                 </div>
@@ -418,7 +518,7 @@ export const IntegrationHealthSection: React.FC = () => {
                           <div className="flex items-center gap-2">
                             {getStatusBadge(h.status)}
                             <span className="text-slate-300">
-                              {h.checked_at ? new Date(h.checked_at).toLocaleTimeString() : 'Recent'}
+                              {formatCheckedAt(h.checked_at) || 'Time not recorded'}
                             </span>
                           </div>
                           <span className="text-slate-400">{h.latency_ms} ms</span>
@@ -450,16 +550,16 @@ export const IntegrationHealthSection: React.FC = () => {
                       </>
                     )}
                     {detailData.integration.category === 'weather' && (
-                      <li>OpenWeather API keys require up to 10 minutes to activate after generation on openweathermap.org.</li>
+                      <li>Verify that the configured OpenWeather API key is active and has access to the requested endpoint.</li>
                     )}
                     {detailData.integration.category === 'database' && (
-                      <li>PostgreSQL connection operates with SSL mode require on Neon cloud. Pool pre-ping is active.</li>
+                      <li>Verify database connectivity and the SSL requirements of your database provider.</li>
                     )}
-                    <li>Credentials and tokens are encrypted and never transmitted in plaintext to client browsers.</li>
+                    <li>After updating a service configuration, use Check Now to verify connectivity again.</li>
                   </ul>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import httpx
+import math
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional
 from decimal import Decimal
@@ -33,6 +34,110 @@ graph_service = Neo4jGraphService()
 simulator = SimulationService()
 
 
+def _bounded_score(value: Any) -> Optional[float]:
+    """Ignore absent/invalid measurements; keep valid measurements on a 0-100 scale."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return max(0.0, min(100.0, number)) if math.isfinite(number) else None
+
+
+def _current_integration_score(check: IntegrationHealthCheck, now: datetime) -> Optional[float]:
+    details = check.details if isinstance(check.details, dict) else {}
+    if details.get("is_enabled") is False or details.get("configuration_status") == "not_configured":
+        return None
+    if check.error_category == "config_missing" or not check.checked_at:
+        return None
+    checked_at = check.checked_at
+    if checked_at.tzinfo is None:
+        checked_at = checked_at.replace(tzinfo=timezone.utc)
+    age = (now - checked_at).total_seconds()
+    if age < 0 or age > max(1, settings.HEALTH_CHECK_INTERVAL_SECONDS):
+        return None
+    return {"healthy": 100.0, "degraded": 50.0, "unhealthy": 0.0}.get(check.status)
+
+
+def _calculate_health(suppliers, inventory_rows, orders, latest_checks, now: datetime) -> Dict[str, Any]:
+    """Compute an evidence-based score, without filling missing signals with defaults.
+
+    Baseline weights: supplier reliability 35%, stock threshold coverage 30%,
+    observed order outcomes 25%, current API checks 10%. Missing components are
+    excluded and the available weights are normalized. Inventory coverage is
+    stock / max(reorder, safety), capped at 100%; rows without a positive
+    threshold are unscorable. Order outcomes compare delivered/completed orders
+    with recorded delays/failures; open and unknown statuses are not evidence of
+    success, and shipping_date is not treated as a promised delivery date.
+    Integration checks must be the latest per provider and no older than the
+    configured health-check interval (15 minutes by default).
+    """
+    supplier_scores = [score for supplier in suppliers
+                       if (score := _bounded_score(supplier.reliability_score)) is not None]
+    inventory_scores = []
+    for inventory in inventory_rows:
+        threshold = max(inventory.reorder_level or 0, inventory.safety_stock_level or 0)
+        if threshold > 0 and inventory.stock_quantity is not None:
+            inventory_scores.append(_bounded_score(100.0 * inventory.stock_quantity / threshold))
+
+    success_statuses = {"delivered", "completed", "complete", "fulfilled"}
+    adverse_statuses = {
+        "delayed", "late", "cancelled", "canceled", "failed", "returned",
+        "backordered", "backorder", "on_hold", "disrupted", "critical",
+        "suspected_fraud", "payment_review",
+    }
+    order_scores = []
+    for order in orders:
+        status = (order.order_status or "").strip().lower().replace(" ", "_").replace("-", "_")
+        if status in success_statuses:
+            order_scores.append(100.0)
+        elif status in adverse_statuses:
+            order_scores.append(0.0)
+
+    integration_scores = [score for check in latest_checks
+                          if (score := _current_integration_score(check, now)) is not None]
+    components = []
+    for key, label, weight, scores in (
+        ("supplier_reliability", "Supplier reliability", 0.35, supplier_scores),
+        ("inventory_coverage", "Inventory coverage", 0.30, inventory_scores),
+        ("order_outcomes", "Order outcomes", 0.25, order_scores),
+        ("integration_health", "API integrations", 0.10, integration_scores),
+    ):
+        components.append({
+            "key": key,
+            "label": label,
+            "score": round(sum(scores) / len(scores), 1) if scores else None,
+            "weight": weight,
+            "sampleSize": len(scores),
+        })
+    available = [component for component in components if component["score"] is not None]
+    overall = None
+    if available:
+        overall = round(sum(component["score"] * component["weight"] for component in available)
+                        / sum(component["weight"] for component in available), 1)
+        explanation = (
+            f"Based on {len(available)} of 4 available signals. Baseline weights: suppliers 35%, "
+            "inventory 30%, order outcomes 25%, API integrations 10%; weights are normalized "
+            "over available signals. Order outcomes reflect recorded completions and exceptions, "
+            "not on-time delivery."
+        )
+    else:
+        explanation = "No scorable supply-chain records or current integration checks are available."
+    missing = [component["label"] for component in components if component["score"] is None]
+    if missing:
+        explanation += " Unavailable: " + ", ".join(missing) + "."
+    excluded_checks = len(latest_checks) - len(integration_scores)
+    if excluded_checks:
+        explanation += (
+            f" {excluded_checks} stale, unknown, disabled or unconfigured integration check(s) excluded."
+        )
+    return {
+        "overallHealthScore": overall,
+        "healthComponents": components,
+        "healthDataStatus": "available" if overall is not None else "insufficient_data",
+        "healthExplanation": explanation,
+    }
+
+
 class DashboardAnalyticsService:
     @staticmethod
     def get_overview(db: Session) -> Dict[str, Any]:
@@ -51,7 +156,7 @@ class DashboardAnalyticsService:
 
         # 2. Inventory Metrics
         inventory_rows = db.query(Inventory).all()
-        total_inventory_units = sum(i.stock_quantity for i in inventory_rows)
+        total_inventory_units = sum((i.stock_quantity or 0) for i in inventory_rows)
 
         # Calculate inventory valuation joining with products
         inventory_items = (
@@ -60,7 +165,7 @@ class DashboardAnalyticsService:
             .all()
         )
         total_inventory_value_usd = float(
-            sum(Decimal(qty) * (price or Decimal(0)) for qty, price in inventory_items)
+            sum(Decimal(qty or 0) * (price or Decimal(0)) for qty, price in inventory_items)
         )
         if total_inventory_value_usd == 0 and total_inventory_units > 0:
             # Fallback valuation with base unit cost if product price is not set
@@ -68,9 +173,10 @@ class DashboardAnalyticsService:
 
         # 3. Supplier Health Score
         suppliers = db.query(Supplier).all()
-        if suppliers:
+        valid_rel_scores = [float(s.reliability_score) for s in suppliers if s.reliability_score is not None]
+        if valid_rel_scores:
             supplier_health_score = round(
-                float(sum(float(s.reliability_score) for s in suppliers) / len(suppliers)), 1
+                float(sum(valid_rel_scores) / len(valid_rel_scores)), 1
             )
         else:
             supplier_health_score = 88.0
@@ -84,7 +190,10 @@ class DashboardAnalyticsService:
             on_time_rate = 94.5
 
         # 5. Active Disruptions & Global Risk Index
-        low_stock_count = sum(1 for i in inventory_rows if i.stock_quantity <= i.reorder_level)
+        low_stock_count = sum(
+            1 for i in inventory_rows
+            if i.stock_quantity is not None and i.reorder_level is not None and i.stock_quantity <= i.reorder_level
+        )
         single_source_risks = sum(1 for s in suppliers if s.single_source_risk)
         active_disruptions = max(low_stock_count + single_source_risks, 1 if suppliers else 0)
 
@@ -92,16 +201,28 @@ class DashboardAnalyticsService:
         risk_penalty = (100.0 - supplier_health_score) * 0.4 + (low_stock_count * 5.0) + (single_source_risks * 8.0)
         global_risk_index = min(95, max(15, int(risk_penalty + 20)))
 
-        # 6. Integration health counts
+        # 6. Latest observation per integration, rather than the last ten checks
+        # (which could all belong to one provider). Windowing works on both
+        # PostgreSQL and SQLite and does not load the entire check history.
+        ranked_checks = db.query(
+            IntegrationHealthCheck.id.label("id"),
+            func.row_number().over(
+                partition_by=func.lower(func.trim(IntegrationHealthCheck.integration_name)),
+                order_by=(IntegrationHealthCheck.checked_at.desc().nulls_last(), IntegrationHealthCheck.id.desc()),
+            ).label("rank"),
+        ).subquery()
         latest_checks = (
             db.query(IntegrationHealthCheck)
-            .order_by(desc(IntegrationHealthCheck.checked_at))
-            .limit(10)
+            .join(ranked_checks, IntegrationHealthCheck.id == ranked_checks.c.id)
+            .filter(ranked_checks.c.rank == 1)
             .all()
         )
-        healthy_integrations = sum(1 for c in latest_checks if c.status == "healthy")
+        now = datetime.now(timezone.utc)
+        healthy_integrations = sum(1 for check in latest_checks if _current_integration_score(check, now) == 100.0)
+        health = _calculate_health(suppliers, inventory_rows, orders, latest_checks, now)
 
         return {
+            **health,
             "globalRiskIndex": global_risk_index,
             "activeDisruptions": active_disruptions,
             "onTimeDeliveryRate": on_time_rate,
@@ -114,7 +235,7 @@ class DashboardAnalyticsService:
             "inventoryUnitsTotal": total_inventory_units,
             "ordersCount": orders_count,
             "activeIntegrationsHealthy": healthy_integrations,
-            "lastUpdated": datetime.now(timezone.utc).isoformat(),
+            "lastUpdated": now.isoformat(),
         }
 
     @staticmethod
@@ -152,16 +273,25 @@ class DashboardAnalyticsService:
         
         inventory_velocity = []
         for inv, p_name, w_name in inventories:
+            stock = inv.stock_quantity
+            safety = inv.safety_stock_level
+            reorder = inv.reorder_level
+
+            if stock is not None and safety is not None and stock <= safety:
+                status = "critical"
+            elif stock is not None and reorder is not None and stock <= reorder:
+                status = "warning"
+            else:
+                status = "nominal"
+
             inventory_velocity.append({
                 "productName": p_name or "Component",
                 "warehouseName": w_name or "Hub",
-                "stockQuantity": inv.stock_quantity,
-                "safetyStockLevel": inv.safety_stock_level,
-                "reorderLevel": inv.reorder_level,
-                "reorderQuantity": inv.reorder_quantity,
-                "status": "critical" if inv.stock_quantity <= inv.safety_stock_level else (
-                    "warning" if inv.stock_quantity <= inv.reorder_level else "nominal"
-                )
+                "stockQuantity": inv.stock_quantity or 0,
+                "safetyStockLevel": inv.safety_stock_level or 0,
+                "reorderLevel": inv.reorder_level or 0,
+                "reorderQuantity": inv.reorder_quantity or 0,
+                "status": status,
             })
 
         # 3. Demand Forecast Data Points
@@ -184,15 +314,16 @@ class DashboardAnalyticsService:
         severity_dist = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
         
         for s in suppliers:
-            score = float(s.reliability_score)
-            if score >= 90:
-                severity_dist["LOW"] += 1
-            elif score >= 75:
-                severity_dist["MEDIUM"] += 1
-            elif score >= 50:
-                severity_dist["HIGH"] += 1
-            else:
-                severity_dist["CRITICAL"] += 1
+            if s.reliability_score is not None:
+                score = float(s.reliability_score)
+                if score >= 90:
+                    severity_dist["LOW"] += 1
+                elif score >= 75:
+                    severity_dist["MEDIUM"] += 1
+                elif score >= 50:
+                    severity_dist["HIGH"] += 1
+                else:
+                    severity_dist["CRITICAL"] += 1
 
         if sum(severity_dist.values()) == 0:
             severity_dist = {"LOW": 5, "MEDIUM": 8, "HIGH": 3, "CRITICAL": 1}
@@ -215,7 +346,7 @@ class DashboardAnalyticsService:
 
         # 1. Evaluate supplier risks
         for s in suppliers:
-            rel = float(s.reliability_score)
+            rel = float(s.reliability_score) if s.reliability_score is not None else 75.0
             lead_time = 0.8 if s.single_source_risk else 0.4
             inv_level = 0.2 if rel < 70 else 0.6
             
@@ -250,26 +381,30 @@ class DashboardAnalyticsService:
 
         # 2. Evaluate low-stock inventory risks
         for inv in inventories:
-            if inv.stock_quantity <= inv.reorder_level:
+            stock = inv.stock_quantity
+            reorder = inv.reorder_level
+            safety = inv.safety_stock_level
+            if stock is not None and reorder is not None and reorder > 0 and stock <= reorder:
                 prod = next((p for p in products if p.id == inv.product_id), None)
                 p_name = prod.name if prod else "Key Component"
                 
                 features = {
                     "demand_volatility": 0.75,
                     "supplier_lead_time": 0.85,
-                    "inventory_level": float(inv.stock_quantity) / max(float(inv.reorder_level), 1.0),
+                    "inventory_level": float(stock) / max(float(reorder), 1.0),
                 }
                 pred = risk_predictor.predict_risk(features)
                 
+                is_crit = safety is not None and stock <= safety
                 risks_list.append({
                     "id": f"risk-inv-{inv.id}",
                     "entityType": "inventory",
                     "entityId": str(inv.id),
                     "entityName": f"{p_name} Buffer Depletion",
                     "riskScore": int(pred["risk_probability"] * 100),
-                    "severity": "CRITICAL" if inv.stock_quantity <= inv.safety_stock_level else "HIGH",
+                    "severity": "CRITICAL" if is_crit else "HIGH",
                     "category": "Buffer Inventory Stockout Exposure",
-                    "explanation": f"Current stock ({inv.stock_quantity} units) is below reorder threshold ({inv.reorder_level} units).",
+                    "explanation": f"Current stock ({stock} units) is below reorder threshold ({reorder} units).",
                     "contributingFactors": [
                         {"feature": "inventory_level", "score": -0.42},
                         {"feature": "safety_stock_threshold", "score": 0.38},
@@ -290,7 +425,10 @@ class DashboardAnalyticsService:
         inventories = db.query(Inventory).all()
         products = db.query(Product).all()
         for inv in inventories:
-            if inv.stock_quantity <= inv.safety_stock_level:
+            stock = inv.stock_quantity
+            safety = inv.safety_stock_level
+            reorder = inv.reorder_level
+            if stock is not None and safety is not None and stock <= safety:
                 prod = next((p for p in products if p.id == inv.product_id), None)
                 p_name = prod.name if prod else "Critical SKU"
                 alerts.append({
@@ -299,11 +437,11 @@ class DashboardAnalyticsService:
                     "severity": "critical",
                     "category": "inventory",
                     "source": "SynChain Inventory Telemetry",
-                    "impactSummary": f"Stock level reached {inv.stock_quantity} units (Safety threshold: {inv.safety_stock_level}). Immediate replenishment recommended.",
+                    "impactSummary": f"Stock level reached {stock} units (Safety threshold: {safety}). Immediate replenishment recommended.",
                     "timestamp": "Active Now",
-                    "details": {"stockQuantity": inv.stock_quantity, "safetyThreshold": inv.safety_stock_level},
+                    "details": {"stockQuantity": stock, "safetyThreshold": safety},
                 })
-            elif inv.stock_quantity <= inv.reorder_level:
+            elif stock is not None and reorder is not None and stock <= reorder:
                 prod = next((p for p in products if p.id == inv.product_id), None)
                 p_name = prod.name if prod else "Standard SKU"
                 alerts.append({
@@ -312,9 +450,9 @@ class DashboardAnalyticsService:
                     "severity": "medium",
                     "category": "inventory",
                     "source": "SynChain Inventory Telemetry",
-                    "impactSummary": f"Current inventory ({inv.stock_quantity} units) dropped below reorder trigger ({inv.reorder_level} units).",
+                    "impactSummary": f"Current inventory ({stock} units) dropped below reorder trigger ({reorder} units).",
                     "timestamp": "Active Now",
-                    "details": {"stockQuantity": inv.stock_quantity, "reorderLevel": inv.reorder_level},
+                    "details": {"stockQuantity": stock, "reorderLevel": reorder},
                 })
 
         # 2. Real Weather Disruption Alerts via OpenWeather

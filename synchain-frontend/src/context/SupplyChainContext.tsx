@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   AIHealthScore,
   KPIMetric,
@@ -18,9 +18,9 @@ import {
   Supplier,
   RiskItem,
   MitigationStrategy,
+  DashboardOverviewData,
 } from '../types';
 import {
-  mockAIHealth,
   mockKPIMetrics,
   mockIncidentAlerts,
   mockDefaultSimulationResult,
@@ -36,9 +36,13 @@ import {
 } from '../services/mockData';
 import { apiService } from '../services/api';
 import { soundFX } from '../services/audioService';
+import { useAuth } from './AuthContext';
+import { emptyHealth, healthFromOverview } from '../services/healthScore';
 
 export interface SupplyChainContextType {
   health: AIHealthScore;
+  healthLoading: boolean;
+  healthError: string | null;
   kpis: KPIMetric[];
   kpiMetrics: KPIMetric[];
   incidents: LiveIncidentAlert[];
@@ -104,7 +108,14 @@ export interface SupplyChainContextType {
 const SupplyChainContext = createContext<SupplyChainContextType | undefined>(undefined);
 
 export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [health, setHealth] = useState<AIHealthScore>(mockAIHealth);
+  const { isAuthenticated, user } = useAuth();
+  const [health, setHealth] = useState<AIHealthScore>(emptyHealth);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+  const overviewRef = useRef<DashboardOverviewData | null>(null);
+  const healthRequestId = useRef(0);
+  const healthFlight = useRef<Promise<void> | null>(null);
+  const dataRequestId = useRef(0);
   const [kpis, setKpis] = useState<KPIMetric[]>(mockKPIMetrics);
   const [incidents, setIncidents] = useState<LiveIncidentAlert[]>(mockIncidentAlerts);
   const [selectedNode, setSelectedNode] = useState<{ id: string; data: DigitalTwinNodeData } | null>(null);
@@ -125,12 +136,42 @@ export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [isRealDataConnected, setIsRealDataConnected] = useState<boolean>(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
 
-  // Refresh and load real data from PostgreSQL / Ingestion Core
-  const refreshData = async () => {
+  // Fetch the score independently: slow forecasting or external feeds cannot hold up the gauge.
+  const refreshHealth = useCallback((): Promise<void> => {
+    if (!isAuthenticated) return Promise.resolve();
+    if (healthFlight.current) return healthFlight.current;
+    const requestId = ++healthRequestId.current;
+    const started = performance.now();
+    setHealthLoading(true);
+    const pending = apiService.getDashboardOverview().then((overview) => {
+      if (requestId !== healthRequestId.current) return;
+      overviewRef.current = overview;
+      setHealth(healthFromOverview(overview, performance.now() - started));
+      setHealthError(null);
+      setIsRealDataConnected(true);
+      setLastRefreshedAt(new Date().toISOString());
+    }).catch(() => {
+      if (requestId !== healthRequestId.current) return;
+      setHealthError('Health data could not be refreshed. Retry when the backend is available.');
+      setHealth((previous) => ({ ...previous, dataStatus: 'unavailable' }));
+      setIsRealDataConnected(false);
+    }).finally(() => {
+      if (requestId !== healthRequestId.current) return;
+      setHealthLoading(false);
+      healthFlight.current = null;
+    });
+    healthFlight.current = pending;
+    return pending;
+  }, [isAuthenticated, user?.id]);
+
+  // Refresh and load real data from PostgreSQL / Ingestion Core.
+  const refreshData = useCallback(async () => {
+    if (!isAuthenticated) return;
+    const requestId = ++dataRequestId.current;
     setIsLoading(true);
     try {
       const [
-        overviewRes,
+        ,
         suppliersRes,
         topologyRes,
         shipmentsRes,
@@ -139,7 +180,7 @@ export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ c
         riskRes,
         notifRes,
       ] = await Promise.allSettled([
-        apiService.getDashboardOverview(),
+        refreshHealth(),
         apiService.getSuppliers(),
         apiService.getDigitalTwinTopology(),
         apiService.getShipments(),
@@ -149,18 +190,9 @@ export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ c
         apiService.getNotifications(),
       ]);
 
-      if (overviewRes.status === 'fulfilled' && overviewRes.value) {
-        const ov = overviewRes.value;
-        setHealth({
-          score: Math.max(15, 100 - ov.globalRiskIndex),
-          status: ov.globalRiskIndex > 50 ? 'warning' : 'optimal',
-          resilienceRating: ov.globalRiskIndex < 35 ? 'A+' : (ov.globalRiskIndex < 55 ? 'B+' : 'C'),
-          lastUpdated: new Date().toISOString(),
-          activeDisruptionsCount: ov.activeDisruptions,
-          predictedRiskEventsCount: Math.max(1, ov.activeDisruptions * 2),
-          mitigationReadinessPct: Math.min(98, Math.max(65, Math.round(ov.supplierHealthScore * 0.95))),
-          latencyMs: 118,
-        });
+      if (requestId !== dataRequestId.current) return;
+      if (overviewRef.current) {
+        const ov = overviewRef.current;
 
         setKpis([
           {
@@ -259,25 +291,47 @@ export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ c
         setIncidents(notifRes.value);
       }
 
-      setIsRealDataConnected(true);
-      setLastRefreshedAt(new Date().toLocaleTimeString());
     } catch (err) {
       console.warn("Failed to refresh live supply chain data:", err);
     } finally {
-      setIsLoading(false);
+      if (requestId === dataRequestId.current) setIsLoading(false);
     }
-  };
+  }, [isAuthenticated, refreshHealth]);
 
   // Automatically refresh data on initial load and listen for ingestion completion
   useEffect(() => {
+    if (!isAuthenticated) {
+      setHealth(emptyHealth);
+      setHealthError(null);
+      setHealthLoading(false);
+      setIsLoading(false);
+      setIsRealDataConnected(false);
+      setLastRefreshedAt(null);
+      overviewRef.current = null;
+      return;
+    }
     refreshData();
 
     const handleDataImported = () => {
       refreshData();
     };
+    const refreshVisibleHealth = () => {
+      if (document.visibilityState === 'visible') void refreshHealth();
+    };
+    const timer = window.setInterval(refreshVisibleHealth, 30000);
     window.addEventListener('synchain_data_imported', handleDataImported);
-    return () => window.removeEventListener('synchain_data_imported', handleDataImported);
-  }, []);
+    window.addEventListener('synchain_integration_health_updated', refreshVisibleHealth);
+    document.addEventListener('visibilitychange', refreshVisibleHealth);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('synchain_data_imported', handleDataImported);
+      window.removeEventListener('synchain_integration_health_updated', refreshVisibleHealth);
+      document.removeEventListener('visibilitychange', refreshVisibleHealth);
+      ++healthRequestId.current;
+      ++dataRequestId.current;
+      healthFlight.current = null;
+    };
+  }, [isAuthenticated, refreshData, refreshHealth]);
 
   // Simulation State
   const [simulationState, setSimulationState] = useState<'idle' | 'scanning' | 'completed'>('completed');
@@ -411,6 +465,8 @@ export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ c
         lastRefreshedAt,
         refreshData,
         health,
+        healthLoading,
+        healthError,
         kpis,
         kpiMetrics: kpis,
         incidents,
