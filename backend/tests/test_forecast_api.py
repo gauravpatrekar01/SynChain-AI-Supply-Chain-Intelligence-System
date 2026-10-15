@@ -274,6 +274,19 @@ def test_11_forecast_health():
 
 def test_12_get_inventory_items():
     """12. Test GET /api/v1/inventory/items returns items with data source labeling."""
+    from app.core.database import SessionLocal
+    from app.models.postgres.models import Product, Warehouse, Inventory
+    with SessionLocal() as db:
+        p = db.query(Product).filter(Product.sku == "SYN-TEST-101").first()
+        if not p:
+            p = Product(sku="SYN-TEST-101", name="Titanium Bracket", category="Aerospace", price=120.50)
+            w = Warehouse(name="Austin Hub", location="Austin, TX", country="US", capacity_units=10000)
+            db.add_all([p, w])
+            db.flush()
+            inv = Inventory(product_id=p.id, warehouse_id=w.id, stock_quantity=150)
+            db.add(inv)
+            db.commit()
+
     response = client.get("/api/v1/inventory/items")
     assert response.status_code == 200
     data = response.json()
@@ -322,6 +335,15 @@ def test_14_get_demand_history_demo_sku():
 
 def test_15_get_demand_history_postgresql_sku_rejected():
     """15. Test that live database product with no sales history cleanly returns 422 without faking data."""
+    from app.core.database import SessionLocal
+    from app.models.postgres.models import Product
+    with SessionLocal() as db:
+        p = db.query(Product).filter(Product.sku == "SYN-TEST-101").first()
+        if not p:
+            p = Product(sku="SYN-TEST-101", name="Titanium Bracket", category="Aerospace", price=120.50)
+            db.add(p)
+            db.commit()
+
     response = client.get("/api/v1/forecast/demand-history/SYN-TEST-101")
     assert response.status_code == 422
     data = response.json()

@@ -12,6 +12,16 @@ from app.ingestion.normalizer import CANONICAL_SCHEMA
 router = APIRouter(prefix="/ingestion", tags=["ingestion"])
 
 
+def import_user(current_user: User = Depends(get_current_active_user)) -> User:
+    role = (getattr(current_user, "role", "user") or "user").lower()
+    if role not in ("admin", "user"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Role not permitted to import data"
+        )
+    return current_user
+
+
 class ValidateImportRequest(BaseModel):
     sheet_name: Optional[str] = None
     column_mapping: Optional[Dict[str, Optional[str]]] = None

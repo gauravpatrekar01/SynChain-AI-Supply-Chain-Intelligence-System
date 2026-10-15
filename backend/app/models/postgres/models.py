@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Numeric, Boolean, Integer, DateTime, ForeignKey, Date
+from sqlalchemy import Column, String, Numeric, Boolean, Integer, DateTime, ForeignKey, Date, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -105,19 +105,26 @@ class Warehouse(Base):
 
 class Inventory(Base):
     __tablename__ = "inventory"
+    __table_args__ = (UniqueConstraint("warehouse_id", "product_id", name="uq_inventory_route"),)
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     warehouse_id = Column(UUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="CASCADE"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     stock_quantity = Column(Integer, nullable=False, default=0)
-    safety_stock_level = Column(Integer, nullable=False, default=0)
-    reorder_level = Column(Integer, nullable=False, default=0)
-    reorder_quantity = Column(Integer, nullable=False, default=0)
+    safety_stock_level = Column(Integer, nullable=True, default=0)
+    reorder_level = Column(Integer, nullable=True, default=0)
+    reorder_quantity = Column(Integer, nullable=True, default=0)
+    reserved_quantity = Column(Integer, nullable=True, default=0)
+    incoming_quantity = Column(Integer, nullable=True, default=0)
+    review_days = Column(Integer, nullable=True)
+    supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="SET NULL"), nullable=True)
+    service_level = Column(Numeric(7, 6), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class Order(Base):
     __tablename__ = "orders"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    external_id = Column(String(100), unique=True, nullable=True, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     order_status = Column(String(50), nullable=False)
     shipping_mode = Column(String(100), nullable=True)
@@ -255,6 +262,9 @@ class DataImport(Base):
     columns_detected = Column(JSONB, nullable=True)
     column_mapping = Column(JSONB, nullable=True)
     error_summary = Column(JSONB, nullable=True)
+    import_mode = Column(String(20), nullable=False, default="append", server_default="append")
+    validation_token = Column(String(64), nullable=True)
+    result = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
