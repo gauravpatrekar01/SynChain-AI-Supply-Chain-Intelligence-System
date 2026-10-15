@@ -50,6 +50,14 @@ import {
   SimulationSuppliersResponse,
   DecisionSimulationPayload,
   DecisionSimulationResult,
+  InventoryItem,
+  InventorySummaryStats,
+  InventoryListResponse,
+  InventoryFormData,
+  InventoryImportPreview,
+  InventoryImportResult,
+  RecalculateBufferResult,
+  WarehouseOption,
 } from '../types';
 import {
   mockAIHealth,
@@ -407,6 +415,124 @@ export const apiService = {
     return res.data;
   },
 
+  // --- Inventory Buffer & Safety Stock Management ---
+  async getInventory(params?: {
+    search?: string;
+    category?: string;
+    facility?: string;
+    status?: string;
+    sort_by?: string;
+    sort_order?: string;
+  }): Promise<{ forecast: InventoryForecastPoint[]; commodities: CommodityPriceIndex[]; items: InventoryItem[] }> {
+    if (params && Object.values(params).some(Boolean)) {
+      const items = await this.getInventoryProducts(params);
+      return {
+        forecast: mockInventoryForecast,
+        commodities: mockCommodityIndices,
+        items,
+      };
+    }
+
+    const res = await apiClient.get('/inventory');
+    return {
+      forecast: res.data?.forecast || mockInventoryForecast,
+      commodities: res.data?.commodities || mockCommodityIndices,
+      items: Array.isArray(res.data?.items) ? res.data.items : [],
+    };
+  },
+
+  async getInventoryProducts(params?: {
+    search?: string;
+    category?: string;
+    facility?: string;
+    status?: string;
+    sort_by?: string;
+    sort_order?: string;
+  }): Promise<InventoryItem[]> {
+    const res = await apiClient.get<InventoryItem[] | InventoryListResponse>('/inventory/items', {
+      params: { ...params, flat: true },
+    });
+    if (Array.isArray(res.data)) {
+      return res.data;
+    }
+    if (res.data && Array.isArray((res.data as InventoryListResponse).items)) {
+      return (res.data as InventoryListResponse).items;
+    }
+    return [];
+  },
+
+  async getInventoryPaginated(params?: {
+    search?: string;
+    category?: string;
+    facility?: string;
+    status?: string;
+    sort_by?: string;
+    sort_order?: string;
+    page?: number;
+    page_size?: number;
+    flat?: boolean;
+  }): Promise<InventoryListResponse> {
+    const res = await apiClient.get<InventoryListResponse>('/inventory/items', { params });
+    return res.data;
+  },
+
+  async getInventoryById(id: string): Promise<InventoryItem> {
+    const res = await apiClient.get<InventoryItem>(`/inventory/items/${id}`);
+    return res.data;
+  },
+
+  async createInventoryItem(data: InventoryFormData): Promise<InventoryItem> {
+    const res = await apiClient.post<InventoryItem>('/inventory/items', data);
+    return res.data;
+  },
+
+  async updateInventoryItem(id: string, data: Partial<InventoryFormData>): Promise<InventoryItem> {
+    const res = await apiClient.put<InventoryItem>(`/inventory/items/${id}`, data);
+    return res.data;
+  },
+
+  async deleteInventoryItem(id: string): Promise<{ success: boolean; message?: string }> {
+    const res = await apiClient.delete<{ success: boolean; message?: string }>(`/inventory/items/${id}`);
+    return res.data;
+  },
+
+  async downloadInventoryTemplate(): Promise<Blob> {
+    const res = await apiClient.get('/inventory/import/template', {
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
+  async previewInventoryCsv(file: File): Promise<InventoryImportPreview> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post<InventoryImportPreview>('/inventory/import/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+
+  async confirmInventoryCsv(
+    previewToken: string,
+    mode: 'skip_duplicates' | 'fail_on_duplicates' = 'skip_duplicates'
+  ): Promise<InventoryImportResult> {
+    const res = await apiClient.post<InventoryImportResult>('/inventory/import/confirm', {
+      preview_token: previewToken,
+      mode,
+    });
+    return res.data;
+  },
+
+  async recalculateInventoryBuffer(): Promise<RecalculateBufferResult> {
+    const res = await apiClient.post<RecalculateBufferResult>('/inventory/recalculate-buffer');
+    return res.data;
+  },
+
+  async getInventoryWarehouses(): Promise<WarehouseOption[]> {
+    const res = await apiClient.get<WarehouseOption[]>('/inventory/warehouses');
+    return res.data;
+  },
+
   // Digital Twin Topology (Real Nodes & Edges from DB)
   async getDigitalTwinTopology(): Promise<{ nodes: DigitalTwinNode[]; edges: DigitalTwinEdge[] }> {
     try {
@@ -504,26 +630,6 @@ export const apiService = {
     return res.data;
   },
 
-  // Inventory & Safety Stock (Real Inventory from DB)
-  async getInventory(): Promise<{ forecast: InventoryForecastPoint[]; commodities: CommodityPriceIndex[]; items?: any[] }> {
-    try {
-      const res = await apiClient.get('/inventory');
-      if (res.data) {
-        return res.data;
-      }
-      return {
-        forecast: mockInventoryForecast,
-        commodities: mockCommodityIndices,
-        items: [],
-      };
-    } catch {
-      return {
-        forecast: mockInventoryForecast,
-        commodities: mockCommodityIndices,
-        items: [],
-      };
-    }
-  },
 
   // Available SKU/Product Inventory Items with stock levels
   async getInventoryItems(): Promise<InventoryItemDetail[]> {

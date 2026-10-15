@@ -236,6 +236,12 @@ class InventoryDecisionModule:
                     ) * batch_size,
                 )
 
+        critical_fractile = None
+        if holding_cost_per_unit is not None and stockout_cost_per_unit is not None:
+            total_cost = float(holding_cost_per_unit) + float(stockout_cost_per_unit)
+            if total_cost > 0:
+                critical_fractile = round(float(stockout_cost_per_unit) / total_cost, 4)
+
         return {
             "status": "success",
             "leadTimeDays": lead_time_days,
@@ -276,7 +282,7 @@ class InventoryDecisionModule:
                 "nominalCoveragePct": service_level * 100,
             },
             "methodUsed": method_used,
-            "criticalFractile": None,
+            "criticalFractile": critical_fractile,
             "leadTimeStdDays": lead_time_std_days,
             "assumptions": [
                 "Daily forecasts represent demand units per day.",

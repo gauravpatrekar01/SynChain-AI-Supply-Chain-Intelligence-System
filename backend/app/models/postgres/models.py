@@ -109,11 +109,22 @@ class Inventory(Base):
     warehouse_id = Column(UUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="CASCADE"), nullable=False)
     product_id = Column(UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     stock_quantity = Column(Integer, nullable=False, default=0)
-    safety_stock_level = Column(Integer, nullable=False, default=0)
-    reorder_level = Column(Integer, nullable=False, default=0)
-    reorder_quantity = Column(Integer, nullable=False, default=0)
+    safety_stock_level = Column(Integer, nullable=True, default=0)
+    reorder_level = Column(Integer, nullable=True, default=0)
+    reorder_quantity = Column(Integer, nullable=True, default=0)
+    reserved_quantity = Column(Integer, nullable=True, default=0)
+    incoming_quantity = Column(Integer, nullable=True, default=0)
+    review_days = Column(Integer, nullable=True)
+    supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=True)
+    service_level = Column(Numeric(7, 6), nullable=True)
+    lead_time_days = Column(Integer, nullable=True)
+    average_daily_demand = Column(Numeric(12, 2), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    product = relationship("Product", foreign_keys=[product_id], lazy="joined")
+    warehouse = relationship("Warehouse", foreign_keys=[warehouse_id], lazy="joined")
+    supplier = relationship("Supplier", foreign_keys=[supplier_id], lazy="joined")
 
 class Order(Base):
     __tablename__ = "orders"

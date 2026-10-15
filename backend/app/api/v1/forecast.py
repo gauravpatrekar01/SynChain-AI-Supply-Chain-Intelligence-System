@@ -152,13 +152,13 @@ async def get_forecast_health():
 
 
 @router.get(
-    "/inventory/items",
+    "/forecast/inventory-items",
     response_model=List[InventoryItemResponse],
     status_code=status.HTTP_200_OK,
-    summary="List inventory items",
+    summary="List forecasting inventory catalog items",
 )
 @router.get(
-    "/inventory",
+    "/inventory/items",
     response_model=List[InventoryItemResponse],
     status_code=status.HTTP_200_OK,
     include_in_schema=False,

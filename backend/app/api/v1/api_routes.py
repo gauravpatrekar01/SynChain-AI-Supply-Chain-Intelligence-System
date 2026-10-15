@@ -20,6 +20,7 @@ from app.api.v1.forecast import router as forecast_router
 from app.api.v1.simulation import router as simulation_router
 from app.api.v1.shipments import router as shipments_router
 from app.api.v1.suppliers import router as suppliers_router
+from app.api.v1.inventory import router as inventory_router
 from app.schemas.forecasting import DemandForecastRequest, DemandForecastResponse
 
 router = APIRouter()
@@ -30,6 +31,7 @@ router.include_router(ingestion_router)
 router.include_router(intelligence_router)
 router.include_router(dashboard_router)
 router.include_router(ml_router)
+router.include_router(inventory_router)
 router.include_router(forecast_router)
 router.include_router(simulation_router)
 router.include_router(shipments_router)

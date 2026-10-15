@@ -11,6 +11,7 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -20,8 +21,10 @@ export const Modal: React.FC<ModalProps> = ({
   subtitle,
   children,
   footer,
-  maxWidth = 'lg',
+  maxWidth,
+  size,
 }) => {
+  const effectiveMaxWidth = size || maxWidth || 'lg';
   useEffect(() => {
     if (isOpen) {
       soundFX.playClick();
@@ -40,7 +43,7 @@ export const Modal: React.FC<ModalProps> = ({
     xl: 'max-w-xl',
     '2xl': 'max-w-2xl',
     '4xl': 'max-w-4xl',
-  }[maxWidth];
+  }[effectiveMaxWidth];
 
   return (
     <AnimatePresence>

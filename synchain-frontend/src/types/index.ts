@@ -1074,3 +1074,138 @@ export interface DecisionSimulationResult {
   assumptions: string[];
   limitations: string[];
 }
+
+// ==========================================
+// Inventory Buffer & Management Types
+// ==========================================
+
+export interface InventoryItem {
+  id: string;
+  product_id?: string;
+  warehouse_id?: string;
+  sku: string;
+  name: string;
+  category: string;
+  facility: string;
+  location?: string | null;
+  country?: string | null;
+  price?: number;
+  on_hand_units: number;
+  reserved_units: number;
+  available_units: number;
+  safety_stock_units: number;
+  reorder_trigger: number;
+  reorder_quantity: number;
+  average_daily_demand?: number | null;
+  lead_time_days?: number | null;
+  days_of_supply?: number | null;
+  buffer_health_percentage: number;
+  status: 'optimal' | 'warning' | 'critical';
+  created_at?: string;
+  updated_at?: string;
+
+  // Frontend compatibility aliases
+  onHandUnits: number;
+  reservedUnits?: number;
+  availableUnits?: number;
+  safetyStockUnits: number;
+  reorderTrigger: number;
+  reorderQuantity?: number;
+  daysOfSupply: number;
+  bufferPct?: number;
+  averageDailyDemand?: number | null;
+  leadTimeDays?: number | null;
+}
+
+export interface InventorySummaryStats {
+  total_products: number;
+  total_on_hand_units: number;
+  total_safety_stock_units: number;
+  total_inventory_value_usd: number;
+  critical_count: number;
+  warning_count: number;
+  optimal_count: number;
+}
+
+export interface InventoryListResponse {
+  items: InventoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  summary: InventorySummaryStats;
+}
+
+export interface InventoryFormData {
+  sku: string;
+  name: string;
+  category: string;
+  warehouse_id?: string;
+  warehouse_name?: string;
+  on_hand_quantity: number;
+  reserved_quantity: number;
+  safety_stock: number;
+  reorder_point: number;
+  reorder_quantity: number;
+  average_daily_demand?: number | null;
+  lead_time_days?: number | null;
+  price?: number;
+}
+
+export interface InventoryImportRowError {
+  row: number;
+  field?: string;
+  message: string;
+  raw_data?: Record<string, any>;
+}
+
+export interface InventoryImportPreview {
+  preview_token: string;
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
+  errors: InventoryImportRowError[];
+  preview_records: Array<Record<string, any>>;
+  valid_count: number;
+  invalid_count: number;
+  duplicate_count: number;
+  error_count: number;
+  rows: Array<Record<string, any>>;
+}
+
+export interface InventoryImportResult {
+  success: boolean;
+  imported_count: number;
+  skipped_count: number;
+  invalid_count: number;
+  imported_items: InventoryItem[];
+  errors: InventoryImportRowError[];
+}
+
+export interface RecalculateBufferResult {
+  success: boolean;
+  message: string;
+  total_items: number;
+  recalculated_count: number;
+  statistical_count: number;
+  parametric_count: number;
+  insufficient_data_count: number;
+  details: Array<{
+    sku: string;
+    name: string;
+    method: string;
+    safety_stock?: number;
+    reorder_point?: number;
+    reorder_quantity?: number;
+    status: string;
+    reason?: string;
+  }>;
+}
+
+export interface WarehouseOption {
+  id: string;
+  name: string;
+  location: string;
+  country: string;
+}

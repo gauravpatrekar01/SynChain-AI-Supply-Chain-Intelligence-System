@@ -366,22 +366,45 @@ class RealtimeSupplyChainService:
             prod = products.get(inv.product_id)
             wh = warehouses.get(inv.warehouse_id)
             stock = inv.stock_quantity or 0
-            safety = inv.safety_stock_level or 100
-            reorder = inv.reorder_level or 200
+            reserved = inv.reserved_quantity or 0
+            safety = inv.safety_stock_level or 0
+            reorder = inv.reorder_level or 0
+            avg_demand = float(inv.average_daily_demand) if inv.average_daily_demand is not None else None
 
-            st = "critical" if stock <= safety else ("warning" if stock <= reorder else "optimal")
-            days_of_supply = max(1, int(stock / max(1, safety // 15)))
+            available = max(0, stock - reserved)
+            if safety > 0:
+                buffer_pct = round((available / safety) * 100.0, 1)
+            else:
+                buffer_pct = 100.0 if available > 0 else 0.0
+
+            if avg_demand is not None and avg_demand > 0:
+                days_of_supply = round(available / avg_demand, 1)
+            elif safety > 0:
+                days_of_supply = round(available / max(1.0, safety / 15.0), 1)
+            else:
+                days_of_supply = 30.0
+
+            if available < safety or stock <= safety:
+                st = "critical"
+            elif available <= reorder:
+                st = "warning"
+            else:
+                st = "optimal"
 
             inventory_items.append({
+                "id": str(inv.id),
                 "sku": prod.sku if prod else f"SKU-{str(inv.id)[:6].upper()}",
                 "name": prod.name if prod else "Standard Assembly",
                 "category": prod.category if prod else "General Materials",
                 "facility": wh.name if wh else "Central Logistics Hub",
                 "onHandUnits": stock,
+                "reservedUnits": reserved,
+                "availableUnits": available,
                 "safetyStockUnits": safety,
                 "daysOfSupply": days_of_supply,
                 "status": st,
                 "reorderTrigger": reorder,
+                "bufferPct": buffer_pct,
             })
 
         if not inventory_items and products:
