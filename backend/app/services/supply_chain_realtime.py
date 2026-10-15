@@ -107,8 +107,8 @@ class RealtimeSupplyChainService:
         for w in warehouses:
             # Check inventory health at this warehouse
             wh_invs = [i for i in inventories if i.warehouse_id == w.id]
-            is_critical = any(i.stock_quantity <= i.safety_stock_level for i in wh_invs)
-            is_warning = any(i.stock_quantity <= i.reorder_level for i in wh_invs)
+            is_critical = any(i.safety_stock_level is not None and i.stock_quantity <= i.safety_stock_level for i in wh_invs)
+            is_warning = any(i.reorder_level is not None and i.stock_quantity <= i.reorder_level for i in wh_invs)
             status = "critical" if is_critical else ("warning" if is_warning else "optimal")
             risk_score = 75 if is_critical else (45 if is_warning else 15)
 
@@ -495,10 +495,10 @@ class RealtimeSupplyChainService:
 
         # 2. Inventory Buffer Depletion Risks
         for inv in inventories:
-            if inv.stock_quantity <= inv.reorder_level:
+            if inv.reorder_level is not None and inv.stock_quantity <= inv.reorder_level:
                 prod = products.get(inv.product_id)
                 p_name = prod.name if prod else "Critical SKU"
-                prob = 5 if inv.stock_quantity <= inv.safety_stock_level else 3
+                prob = 5 if (inv.safety_stock_level is not None and inv.stock_quantity <= inv.safety_stock_level) else 3
                 sev = 4
                 risks.append({
                     "id": f"risk-inv-{inv.id}",

@@ -185,6 +185,15 @@ class InventoryDecisionModule:
 
             method_used = "lead_time_variability_approximation"
 
+        critical_fractile = None
+        if holding_cost_per_unit is not None and stockout_cost_per_unit is not None:
+            hc = float(holding_cost_per_unit)
+            sc = float(stockout_cost_per_unit)
+            if hc + sc > 0:
+                critical_fractile = round(sc / (sc + hc), 4)
+                if method_used in ("gaussian_rmse_approximation", "forecast_mean_only"):
+                    method_used = "parametric_analytic"
+
         reorder_point = expected_demand + safety_stock
 
         # Validate current inventory.
@@ -255,8 +264,8 @@ class InventoryDecisionModule:
                 3,
             ),
             "reorderPoint": round(
-                reorder_point,
-                3,
+                round(expected_demand, 3) + round(safety_stock, 3),
+                2,
             ),
             "currentStock": current,
             "recommendedReorderQuantity": round(

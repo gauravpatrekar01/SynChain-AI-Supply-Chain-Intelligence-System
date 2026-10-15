@@ -60,6 +60,18 @@ import {
   WarehouseOption,
 } from '../types';
 import {
+  AnalysisOverviewResponse,
+  RiskRegisterListResponse,
+  RiskDetailResponse,
+  ShipmentAnalysisListResponse,
+  SupplierAnalysisListResponse,
+  InventoryAnalysisListResponse,
+  ForecastAnalysisListResponse,
+  AnalysisSimulationRequest,
+  AnalysisSimulationResponse,
+  AnalysisRecommendationsListResponse,
+} from '../types/analysis';
+import {
   mockAIHealth,
   mockKPIMetrics,
   mockIncidentAlerts,
@@ -884,6 +896,70 @@ export const apiService = {
 
   async runDecisionSimulation(payload: DecisionSimulationPayload): Promise<DecisionSimulationResult> {
     const res = await apiClient.post('/simulation/decision', payload);
+    return res.data;
+  },
+
+  // --- Supply Chain Analysis Module ---
+  async getAnalysisOverview(): Promise<AnalysisOverviewResponse> {
+    const res = await apiClient.get('/analysis/overview');
+    return res.data;
+  },
+
+  async getRiskRegister(params?: {
+    category?: string;
+    severity?: string;
+    search?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<RiskRegisterListResponse> {
+    const res = await apiClient.get('/analysis/risks', { params });
+    return res.data;
+  },
+
+  async getRiskDetail(riskId: string): Promise<RiskDetailResponse> {
+    const res = await apiClient.get(`/analysis/risks/${encodeURIComponent(riskId)}`);
+    return res.data;
+  },
+
+  async getShipmentsAnalysis(): Promise<ShipmentAnalysisListResponse> {
+    const res = await apiClient.get('/analysis/shipments');
+    return res.data;
+  },
+
+  async getSuppliersAnalysis(): Promise<SupplierAnalysisListResponse> {
+    const res = await apiClient.get('/analysis/suppliers');
+    return res.data;
+  },
+
+  async getInventoryAnalysis(): Promise<InventoryAnalysisListResponse> {
+    const res = await apiClient.get('/analysis/inventory');
+    return res.data;
+  },
+
+  async getForecastsAnalysis(): Promise<ForecastAnalysisListResponse> {
+    const res = await apiClient.get('/analysis/forecasts');
+    return res.data;
+  },
+
+  async runAnalysisSimulation(payload: AnalysisSimulationRequest): Promise<AnalysisSimulationResponse> {
+    const res = await apiClient.post('/analysis/simulate', payload);
+    return res.data;
+  },
+
+  async getAnalysisRecommendations(): Promise<AnalysisRecommendationsListResponse> {
+    const res = await apiClient.get('/analysis/recommendations');
+    return res.data;
+  },
+
+  async updateRecommendationStatus(
+    recId: string,
+    status: string,
+    notes?: string
+  ): Promise<{ recommendation_id: string; status: string; notes?: string }> {
+    const res = await apiClient.patch(`/analysis/recommendations/${encodeURIComponent(recId)}`, {
+      status,
+      notes,
+    });
     return res.data;
   },
 };

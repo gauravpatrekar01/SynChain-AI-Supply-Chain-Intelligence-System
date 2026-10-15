@@ -12,12 +12,7 @@ from app.services.dashboard.analytics_service import DashboardAnalyticsService
 client = TestClient(app)
 
 
-_cached_test_user = None
-
 def override_auth_user():
-    global _cached_test_user
-    if _cached_test_user is not None:
-        return _cached_test_user
     db = SessionLocal()
     try:
         user = db.query(User).first()
@@ -33,8 +28,7 @@ def override_auth_user():
             db.add(user)
             db.commit()
             db.refresh(user)
-        _cached_test_user = user
-        return _cached_test_user
+        return user
     finally:
         db.close()
 
@@ -337,6 +331,18 @@ def test_auth_deps_safe_sub_uuid_and_email():
     db = SessionLocal()
     try:
         user = db.query(User).first()
+        if not user:
+            user = User(
+                name="Test Admin",
+                email="admin_deps@synchain.ai",
+                password_hash="mock_hash",
+                role="admin",
+                is_active=True,
+                is_verified=True,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
         assert user is not None
 
         # 1. Test token with standard UUID sub

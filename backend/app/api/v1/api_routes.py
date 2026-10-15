@@ -21,6 +21,7 @@ from app.api.v1.simulation import router as simulation_router
 from app.api.v1.shipments import router as shipments_router
 from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.inventory import router as inventory_router
+from app.api.v1.analysis import router as analysis_router
 from app.schemas.forecasting import DemandForecastRequest, DemandForecastResponse
 
 router = APIRouter()
@@ -36,6 +37,7 @@ router.include_router(forecast_router)
 router.include_router(simulation_router)
 router.include_router(shipments_router)
 router.include_router(suppliers_router)
+router.include_router(analysis_router)
 
 # Initialize services
 forecast_service = ForecastingService()

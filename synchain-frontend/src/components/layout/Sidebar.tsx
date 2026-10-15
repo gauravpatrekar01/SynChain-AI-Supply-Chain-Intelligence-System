@@ -16,6 +16,8 @@ import {
   ChevronRight,
   Zap,
   UploadCloud,
+  BarChart3,
+  Activity,
 } from 'lucide-react';
 import { soundFX } from '../../services/audioService';
 import { useSupplyChain } from '../../context/SupplyChainContext';
@@ -53,6 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       title: 'Command & Twin',
       items: [
         { id: 'dashboard', label: 'AI Command Center', icon: LayoutDashboard },
+        { id: 'analysis', label: 'Supply Chain Analysis', icon: BarChart3, badge: 'Live', badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40' },
         // { id: 'digital-twin', label: 'Digital Twin Graph', icon: Network, badge: 'Live' },
         { id: 'geomap', label: 'Fleet & Geo Logistics', icon: Globe2 },
       ],

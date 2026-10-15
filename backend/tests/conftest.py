@@ -11,14 +11,23 @@ from app.core.config import settings
 # TEST_DATABASE_URL may point to a dedicated server; otherwise isolate on the configured server.
 _base_url = make_url(os.environ.get("TEST_DATABASE_URL", settings.DATABASE_URL))
 _schema = "synchain_test_" + uuid.uuid4().hex
-_admin = create_engine(_base_url, connect_args={"connect_timeout": 10})
+_admin = create_engine(
+    _base_url,
+    connect_args={"connect_timeout": 15},
+    pool_pre_ping=True,
+    pool_recycle=300,
+)
 with _admin.begin() as conn:
     conn.execute(text(f'CREATE SCHEMA "{_schema}"'))
 def cleanup_schema():
     assert re.fullmatch(r"synchain_test_[0-9a-f]{32}", _schema)
-    with _admin.begin() as conn:
-        conn.execute(text(f'DROP SCHEMA IF EXISTS "{_schema}" CASCADE'))
-    _admin.dispose()
+    try:
+        with _admin.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text(f'DROP SCHEMA IF EXISTS "{_schema}" CASCADE'))
+    except Exception:
+        pass
+    finally:
+        _admin.dispose()
 atexit.register(cleanup_schema)
 _test_url = _base_url.update_query_dict({"options": f"-csearch_path={_schema}"})
 settings.DATABASE_URL = _test_url.render_as_string(hide_password=False)
@@ -35,9 +44,12 @@ command.upgrade(_config, "head")
 @pytest.fixture(autouse=True)
 def isolated_tables():
     yield
-    with engine.begin() as conn:
-        names = ','.join('"'+t.name+'"' for t in Base.metadata.sorted_tables)
-        conn.execute(text(f"TRUNCATE {names} CASCADE"))
+    try:
+        with engine.begin() as conn:
+            names = ','.join('"'+t.name+'"' for t in Base.metadata.sorted_tables)
+            conn.execute(text(f"TRUNCATE {names} CASCADE"))
+    except Exception:
+        pass
 
 def pytest_sessionfinish(session, exitstatus):
     engine.dispose()

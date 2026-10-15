@@ -368,6 +368,15 @@ def test_14_get_demand_history_demo_sku():
 
 def test_15_get_demand_history_postgresql_sku_rejected():
     """15. Test that live database product with no sales history cleanly returns 422 without faking data."""
+    from app.core.database import SessionLocal
+    from app.models.postgres.models import Product
+    with SessionLocal() as db:
+        p = db.query(Product).filter(Product.sku == "SYN-TEST-101").first()
+        if not p:
+            p = Product(sku="SYN-TEST-101", name="Titanium Bracket", category="Aerospace", price=120.50)
+            db.add(p)
+            db.commit()
+
     response = client.get("/api/v1/forecast/demand-history/SYN-TEST-101")
     assert response.status_code == 422
     data = response.json()

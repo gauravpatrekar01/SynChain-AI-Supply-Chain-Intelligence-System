@@ -20,9 +20,11 @@ import { ReportsView } from '../reports/ReportsView';
 import { SettingsView } from '../settings/SettingsView';
 import { DataIngestionView } from '../ingestion/DataIngestionView';
 import { SupplyChainIntelligenceView } from '../intelligence/SupplyChainIntelligenceView';
+import { AnalysisView } from '../analysis/AnalysisView';
 
 const PAGE_IDS = [
   'dashboard',
+  'analysis',
   'digital-twin',
   'geomap',
   'scenario-builder',
@@ -54,6 +56,8 @@ export const MainLayout: React.FC = () => {
 
   const renderCurrentPage = () => {
     switch (currentPage) {
+      case 'analysis':
+        return <AnalysisView />;
       case 'digital-twin':
         return <DigitalTwinView onNavigate={navigateToPage} />;
       case 'geomap':

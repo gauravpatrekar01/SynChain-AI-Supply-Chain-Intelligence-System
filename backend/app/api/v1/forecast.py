@@ -25,6 +25,7 @@ from app.models.postgres.models import (
     Sales,
     Warehouse,
 )
+from app.models.postgres.observations import DemandObservation
 from app.services.forecasting.prophet_forecast import (
     ForecastingService,
     MODEL_VERSION,
@@ -427,6 +428,30 @@ def get_demand_history_route(
     product = db.query(Product).filter(Product.sku == clean_sku).first()
 
     if product:
+        demand_obs = (
+            db.query(DemandObservation)
+            .filter(DemandObservation.product_id == product.id)
+            .order_by(DemandObservation.observation_date.asc())
+            .all()
+        )
+        if len(demand_obs) >= 1:
+            points = [
+                {
+                    "date": d.observation_date.isoformat(),
+                    "demand": float(d.quantity),
+                }
+                for d in demand_obs[-limit:]
+            ]
+            return {
+                "sku": clean_sku,
+                "productName": product.name,
+                "dataSource": "postgresql_live",
+                "isSimulated": False,
+                "totalObservations": len(demand_obs),
+                "storeId": str(demand_obs[0].warehouse_id),
+                "historicalData": points,
+            }
+
         sales_count = (
             db.query(Sales)
             .filter(Sales.product_id == product.id)
@@ -442,10 +467,10 @@ def get_demand_history_route(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"Product '{clean_sku}' ({product.name}) exists in PostgreSQL, "
-                f"but historical demand is insufficient: {sales_count} sales "
-                f"records and {order_items_count} order-item records. "
-                "At least five valid daily observations are required. "
-                "Synthetic data will not be substituted for live products."
+                f"but has insufficient historical demand observations: {len(demand_obs)} daily observations, "
+                f"{sales_count} sales records, and {order_items_count} order line items were found. "
+                "SynChain AI requires validated daily observations and "
+                "never silently substitutes synthetic data into live production records."
             ),
         )
 
@@ -494,7 +519,7 @@ async def generate_demand_forecast_route(request: DemandForecastRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
-                "Forecast computation failed. Check the historical dates, "
+                "Forecasting computation failed. Check the historical dates, "
                 "demand values, and Prophet installation."
             ),
         ) from exc
