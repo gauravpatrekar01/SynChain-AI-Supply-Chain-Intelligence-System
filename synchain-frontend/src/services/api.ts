@@ -700,6 +700,13 @@ export const apiService = {
     return res.data;
   },
 
+  async getForecastPlan(sku: string, horizon: number = 30, leadTime: number = 7): Promise<DemandForecastResponsePayload> {
+    const res = await apiClient.get(`/forecast/plan/${encodeURIComponent(sku)}`, {
+      params: { horizon, lead_time: leadTime },
+    });
+    return res.data;
+  },
+
   async getInventoryReorderPolicy(payload: InventoryPolicyRequestPayload): Promise<InventoryPolicyResponsePayload> {
     const res = await apiClient.post('/inventory/reorder-policy', payload);
     return res.data;

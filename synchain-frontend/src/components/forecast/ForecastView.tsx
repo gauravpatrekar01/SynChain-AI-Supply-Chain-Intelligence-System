@@ -4,8 +4,10 @@ import * as echarts from 'echarts';
 import { useSupplyChain } from '../../context/SupplyChainContext';
 import { GlassCard } from '../common/GlassCard';
 import { NeonBadge } from '../common/NeonBadge';
+import { Button } from '../common/Button';
 import {
   TrendingUp,
+  TrendingDown,
   Sparkles,
   PackageCheck,
   DollarSign,
@@ -17,6 +19,17 @@ import {
   Boxes,
   Database,
   AlertCircle,
+  Calendar,
+  Layers,
+  ArrowRight,
+  ShieldAlert,
+  Clock,
+  CheckCircle2,
+  Sliders,
+  FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
+  Search,
 } from 'lucide-react';
 import { soundFX } from '../../services/audioService';
 import { apiService } from '../../services/api';
@@ -27,11 +40,15 @@ import {
   DemandForecastPoint,
   InventoryItemDetail,
   DemandHistoryResponsePayload,
+  InventoryProjectionPoint,
+  ForecastAlertItem,
+  ForecastRecommendationItem,
 } from '../../types';
 
 export const ForecastView: React.FC = () => {
   const { commodityPrices } = useSupplyChain();
-  const [forecastHorizon, setForecastHorizon] = useState<30 | 60 | 90 | 180>(30);
+  // Phase 1: Forecast Horizon Selector (30, 60, 90 Days)
+  const [forecastHorizon, setForecastHorizon] = useState<30 | 60 | 90>(30);
   const [selectedCommodity, setSelectedCommodity] = useState<string>('Lithium Hydroxide (Battery Grade)');
   const [leadTimeDays, setLeadTimeDays] = useState<number>(7);
   const [targetServiceLevel] = useState<number>(0.95);
@@ -50,9 +67,14 @@ export const ForecastView: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDemoFallback, setIsDemoFallback] = useState<boolean>(false);
 
+  // Table pagination and search state
+  const [tableSearch, setTableSearch] = useState<string>('');
+  const [tablePage, setTablePage] = useState<number>(1);
+  const pageSize = 10;
+
   // Selected item metadata from catalog
   const currentItem = useMemo(() => {
-    return inventoryCatalog.find((it) => it.sku === selectedSku) || null;
+    return inventoryCatalog.find((it) => it.sku.toUpperCase() === selectedSku.toUpperCase()) || null;
   }, [inventoryCatalog, selectedSku]);
 
   // Load Inventory Catalog on Mount
@@ -63,7 +85,7 @@ export const ForecastView: React.FC = () => {
         const items = await apiService.getInventoryItems();
         if (isMounted && items && items.length > 0) {
           setInventoryCatalog(items);
-          setSelectedSku((prev) => (items.some((it) => it.sku === prev) ? prev : items[0].sku));
+          setSelectedSku((prev) => (items.some((it) => it.sku.toUpperCase() === prev.toUpperCase()) ? prev : items[0].sku));
         }
       } catch (e) {
         console.warn('Failed to load inventory catalog:', e);
@@ -75,29 +97,28 @@ export const ForecastView: React.FC = () => {
     };
   }, []);
 
-  // Fetch forecast and inventory policy for selected SKU
+  // Fetch multi-horizon forecast and inventory policy for selected SKU
   const loadForecastData = useCallback(
-    async (sku: string, horizon: number, leadTime: number) => {
+    async (sku: string, horizon: 30 | 60 | 90, leadTime: number) => {
       setIsLoading(true);
       setIsError(false);
       setErrorMessage(null);
       setSkuDataWarning(null);
 
       try {
-        // 1. Fetch Verified Demand History for the SKU
+        // 1. Fetch Verified Demand History for the SKU (request 180 days to give Prophet ample seasonal depth)
         let historyData: Array<{ date: string; demand: number }> = [];
         let provenance: DemandHistoryResponsePayload | null = null;
 
         try {
-          provenance = await apiService.getDemandHistory(sku, 90);
+          provenance = await apiService.getDemandHistory(sku, 180);
           setHistoryProvenance(provenance);
           historyData = provenance.historicalData;
         } catch (histErr: any) {
-          // If backend returns 422 for a live PostgreSQL item with 0 sales observations
           if (histErr?.response?.status === 422) {
             const detailMsg =
               histErr?.response?.data?.detail ||
-              'This live database SKU has 0 historical customer sales in PostgreSQL. SynChain AI never silently substitutes synthetic data for live items.';
+              'This live database SKU has insufficient historical customer sales observations in PostgreSQL. SynChain AI requires genuine observations and never silently substitutes synthetic data into live production records.';
             setSkuDataWarning(detailMsg);
             setForecastResponse(null);
             setInventoryPolicy(null);
@@ -108,22 +129,30 @@ export const ForecastView: React.FC = () => {
           historyData = DEMO_SYNTHETIC_HISTORICAL_DEMAND;
         }
 
-        // 2. POST /api/v1/forecast/demand using verified historical observations
+        // 2. Derive inventory policy baselines from current item
+        const currentStockVal = currentItem ? currentItem.currentStock : 231;
+        const safetyStockVal = currentItem ? currentItem.safetyStock : 135;
+        const reorderLevelVal = currentItem ? currentItem.reorderLevel : 150;
+        const reorderQtyVal = currentItem ? currentItem.reorderQuantity : 200;
+
+        // 3. POST /api/v1/forecast/demand with full horizon and inventory parameters
         const forecastData = await apiService.getDemandForecast({
           productId: sku,
           historicalData: historyData,
           horizonDays: horizon,
           intervalWidth: 0.95,
           evaluate: true,
+          currentStock: currentStockVal,
+          safetyStock: safetyStockVal,
+          reorderPoint: reorderLevelVal,
+          leadTimeDays: leadTime,
+          reorderQuantity: reorderQtyVal,
         });
 
         setForecastResponse(forecastData);
         setIsDemoFallback(false);
 
-        // 3. POST /api/v1/inventory/reorder-policy using generated forecast output and on-hand stock
-        const currentStockVal = currentItem ? currentItem.currentStock : undefined;
-        const reorderQtyVal = currentItem ? currentItem.reorderQuantity : undefined;
-
+        // 4. POST /api/v1/inventory/reorder-policy to verify parametric uncertainty bounds
         try {
           const policyData = await apiService.getInventoryReorderPolicy({
             productId: sku,
@@ -148,8 +177,48 @@ export const ForecastView: React.FC = () => {
           err?.response?.data?.detail || err?.message || 'Backend forecasting service unreachable'
         );
 
-        // Graceful fallback to verified 30-day synthetic series
-        const syntheticPoints: DemandForecastPoint[] = DEMO_SYNTHETIC_HISTORICAL_DEMAND.map((pt) => ({
+        // Deterministic synthetic fallback respecting requested horizon
+        const baseDemand = 1200;
+        const syntheticForecastPoints: DemandForecastPoint[] = [];
+        const syntheticProjections: InventoryProjectionPoint[] = [];
+        let runningStock = currentItem ? currentItem.currentStock : 45000;
+        const ss = currentItem ? currentItem.safetyStock : 30000;
+        const rop = currentItem ? currentItem.reorderLevel : 35000;
+        const today = new Date();
+
+        for (let i = 1; i <= horizon; i++) {
+          const d = new Date(today);
+          d.setDate(today.getDate() + i);
+          const dateStr = d.toISOString().split('T')[0];
+          const demand = Math.round(baseDemand + 150 * Math.sin(i * 0.4) + (i % 7) * 20);
+          const lower = Math.round(demand * 0.9);
+          const upper = Math.round(demand * 1.1);
+
+          runningStock = Math.max(0, runningStock - demand);
+          syntheticForecastPoints.push({
+            date: dateStr,
+            predictedDemandUnits: demand,
+            confidenceLower: lower,
+            confidenceUpper: upper,
+            historicalBaseline: demand,
+            projectedStock: runningStock,
+            safetyStockFloor: ss,
+            reorderTriggerPoint: rop,
+          });
+
+          syntheticProjections.push({
+            day: i,
+            date: dateStr,
+            demand,
+            projectedStock: runningStock,
+            safetyStockFloor: ss,
+            reorderTriggerPoint: rop,
+            replenishmentUnits: 0,
+            status: runningStock === 0 ? 'stockout' : runningStock < ss ? 'critical' : runningStock <= rop ? 'warning' : 'optimal',
+          });
+        }
+
+        const histPoints: DemandForecastPoint[] = DEMO_SYNTHETIC_HISTORICAL_DEMAND.map((pt) => ({
           date: pt.date,
           actualDemandUnits: pt.demand,
           predictedDemandUnits: pt.demand,
@@ -164,34 +233,14 @@ export const ForecastView: React.FC = () => {
           algorithm: 'Synthetic Historical Baseline (Demo Fallback)',
           modelVersion: 'Offline-Demo',
           horizon,
-          forecast: syntheticPoints.slice(-horizon),
-          historical: syntheticPoints,
-        });
-
-        const expectedLtDemand = syntheticPoints
-          .slice(-leadTime)
-          .reduce((sum, p) => sum + p.predictedDemandUnits, 0);
-        const fallbackSafetyStock = Math.round(Math.sqrt(leadTime) * 120 * 1.645);
-        const fallbackRop = expectedLtDemand + fallbackSafetyStock;
-        const currentStockVal = currentItem ? currentItem.currentStock : 231;
-
-        setInventoryPolicy({
-          status: 'demo_fallback',
-          productId: sku,
-          leadTimeDays: leadTime,
-          targetServiceLevel: targetServiceLevel,
-          expectedLeadTimeDemand: expectedLtDemand,
-          safetyStock: fallbackSafetyStock,
-          reorderPoint: fallbackRop,
-          currentStock: currentStockVal,
-          reorderRequired: currentStockVal <= fallbackRop,
-          recommendedReorderQuantity: currentStockVal <= fallbackRop ? Math.max(0, fallbackRop + expectedLtDemand - currentStockVal) : 0,
-          methodUsed: 'synthetic_gaussian_approximation',
-          assumptions: [
-            'DEMO MODE: Synthetic estimate calculated while FastAPI backend is offline.',
-            `Replenishment lead time evaluated: ${leadTime} calendar days.`,
-            `Target cycle service level: ${(targetServiceLevel * 100).toFixed(0)}%.`,
-          ],
+          startDate: syntheticForecastPoints[0]?.date,
+          endDate: syntheticForecastPoints[syntheticForecastPoints.length - 1]?.date,
+          granularity: 'Daily',
+          forecast: syntheticForecastPoints,
+          historical: histPoints,
+          inventoryProjections: syntheticProjections,
+          daysOfSupply: Math.round((currentItem?.currentStock || 45000) / baseDemand),
+          reorderRequired: (currentItem?.currentStock || 45000) <= rop,
         });
       } finally {
         setIsLoading(false);
@@ -207,10 +256,87 @@ export const ForecastView: React.FC = () => {
     }
   }, [selectedSku, forecastHorizon, leadTimeDays, loadForecastData]);
 
+  // Reset table pagination when SKU or horizon changes
+  useEffect(() => {
+    setTablePage(1);
+  }, [selectedSku, forecastHorizon]);
 
-  // Combine historical observations and forward predictions chronologically
-  const chartTimeline = useMemo(() => {
-    if (!forecastResponse) return { dates: [], actuals: [], predicted: [], upper: [], lower: [] };
+  // Derived KPI calculations
+  const kpis = useMemo(() => {
+    if (!forecastResponse || !forecastResponse.forecast || forecastResponse.forecast.length === 0) {
+      return {
+        currentDailyDemand: 0,
+        forecastTotalDemand: 0,
+        forecastDailyAvg: 0,
+        demandShiftPct: 0,
+        currentStock: currentItem?.currentStock || 0,
+        daysOfSupply: 0,
+        stockoutRiskText: 'Unknown',
+        stockoutRiskVariant: 'neutral' as const,
+      };
+    }
+
+    const hist = forecastResponse.historical || [];
+    const fcast = forecastResponse.forecast || [];
+
+    // 1. Current average daily demand (from last 14 historical days)
+    const recentHist = hist.slice(-14);
+    const recentHistSum = recentHist.reduce((s, p) => s + (p.actualDemandUnits ?? p.predictedDemandUnits ?? 0), 0);
+    const currentDailyDemand = recentHist.length > 0 ? Math.round(recentHistSum / recentHist.length) : 0;
+
+    // 2. Forecasted Demand over horizon
+    const forecastTotalDemand = fcast.reduce((s, p) => s + p.predictedDemandUnits, 0);
+    const forecastDailyAvg = fcast.length > 0 ? Math.round(forecastTotalDemand / fcast.length) : 0;
+
+    // 3. Expected Demand Shift (%)
+    const demandShiftPct =
+      currentDailyDemand > 0
+        ? Number((((forecastDailyAvg - currentDailyDemand) / currentDailyDemand) * 100).toFixed(1))
+        : 0;
+
+    // 4. Current Stock
+    const currentStock = currentItem ? currentItem.currentStock : (forecastResponse.inventoryProjections?.[0]?.projectedStock ?? 0);
+
+    // 5. Days of Inventory Remaining
+    const daysOfSupply =
+      forecastResponse.daysOfSupply !== undefined && forecastResponse.daysOfSupply !== null
+        ? forecastResponse.daysOfSupply
+        : forecastDailyAvg > 0
+        ? Number((currentStock / forecastDailyAvg).toFixed(1))
+        : 999;
+
+    // 6. Stockout Risk Assessment
+    let stockoutRiskText = `Safe (${forecastHorizon}d Buffer)`;
+    let stockoutRiskVariant: 'optimal' | 'warning' | 'critical' | 'neutral' = 'optimal';
+
+    if (forecastResponse.estimatedStockoutDay) {
+      stockoutRiskText = `Stockout Day ${forecastResponse.estimatedStockoutDay}`;
+      stockoutRiskVariant = 'critical';
+    } else if (daysOfSupply < leadTimeDays) {
+      stockoutRiskText = `Lead Time Deficit (${daysOfSupply}d < ${leadTimeDays}d)`;
+      stockoutRiskVariant = 'critical';
+    } else if (forecastResponse.reorderRequired) {
+      stockoutRiskText = 'Reorder Triggered';
+      stockoutRiskVariant = 'warning';
+    }
+
+    return {
+      currentDailyDemand,
+      forecastTotalDemand,
+      forecastDailyAvg,
+      demandShiftPct,
+      currentStock,
+      daysOfSupply,
+      stockoutRiskText,
+      stockoutRiskVariant,
+    };
+  }, [forecastResponse, currentItem, forecastHorizon, leadTimeDays]);
+
+  // Combine chronological timeline for Chart 1 (Demand Forecast)
+  const demandChartData = useMemo(() => {
+    if (!forecastResponse) {
+      return { dates: [], actuals: [], predicted: [], baseline: [], upper: [], lower: [] };
+    }
 
     const hist = forecastResponse.historical || [];
     const fcast = forecastResponse.forecast || [];
@@ -218,31 +344,34 @@ export const ForecastView: React.FC = () => {
     const dates: string[] = [];
     const actuals: Array<number | null> = [];
     const predicted: Array<number | null> = [];
+    const baseline: Array<number | null> = [];
     const upper: Array<number | null> = [];
     const lower: Array<number | null> = [];
 
-    // Historical points
+    // Historical Points
     hist.forEach((pt) => {
       dates.push(pt.date);
       actuals.push(pt.actualDemandUnits ?? null);
-      predicted.push(pt.predictedDemandUnits ?? null);
+      predicted.push(null);
+      baseline.push(pt.historicalBaseline ?? null);
       upper.push(null);
       lower.push(null);
     });
 
-    // Future forecast points
+    // Forecast Future Points
     fcast.forEach((pt) => {
       dates.push(pt.date);
-      actuals.push(null); // No actuals in the future
+      actuals.push(null);
       predicted.push(pt.predictedDemandUnits);
+      baseline.push(pt.historicalBaseline ?? null);
       upper.push(pt.confidenceUpper ?? null);
       lower.push(pt.confidenceLower ?? null);
     });
 
-    return { dates, actuals, predicted, upper, lower };
+    return { dates, actuals, predicted, baseline, upper, lower };
   }, [forecastResponse]);
 
-  // Demand ECharts Configuration
+  // Chart 1: Global Demand Forecast ECharts Option
   const demandOption = useMemo(() => {
     return {
       backgroundColor: 'transparent',
@@ -254,7 +383,7 @@ export const ForecastView: React.FC = () => {
         textStyle: { color: '#f8fafc', fontSize: 12 },
         formatter: (params: any) => {
           if (!Array.isArray(params) || params.length === 0) return '';
-          let html = `<div class="font-bold text-slate-300 pb-1 mb-1 border-b border-white/10">${params[0].axisValue}</div>`;
+          let html = `<div class="font-bold text-slate-300 pb-1 mb-1 border-b border-white/10 font-mono">${params[0].axisValue}</div>`;
           params.forEach((item: any) => {
             if (item.value !== null && item.value !== undefined) {
               html += `<div class="flex items-center justify-between gap-4 py-0.5 text-xs">
@@ -267,7 +396,7 @@ export const ForecastView: React.FC = () => {
         },
       },
       legend: {
-        data: ['Historical Orders', 'AI Predicted Demand', 'Confidence Upper (95%)', 'Confidence Lower (95%)'],
+        data: ['Actual Orders', 'AI Predicted Demand', 'Statistical Baseline (AR-7)', '95% Confidence Upper Band', '95% Confidence Lower Band'],
         textStyle: { color: '#94a3b8', fontSize: 11 },
         top: 0,
         right: 10,
@@ -275,9 +404,13 @@ export const ForecastView: React.FC = () => {
       grid: { left: '3%', right: '3%', bottom: '4%', top: '16%', containLabel: true },
       xAxis: {
         type: 'category',
-        data: chartTimeline.dates,
+        data: demandChartData.dates,
         axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } },
-        axisLabel: { color: '#94a3b8', fontSize: 10, rotate: chartTimeline.dates.length > 40 ? 30 : 0 },
+        axisLabel: {
+          color: '#94a3b8',
+          fontSize: 10,
+          rotate: demandChartData.dates.length > 50 ? 35 : 0,
+        },
       },
       yAxis: {
         type: 'value',
@@ -291,9 +424,9 @@ export const ForecastView: React.FC = () => {
       },
       series: [
         {
-          name: 'Historical Orders',
+          name: 'Actual Orders',
           type: 'line',
-          data: chartTimeline.actuals,
+          data: demandChartData.actuals,
           smooth: true,
           itemStyle: { color: '#3B82F6' },
           lineStyle: { width: 3, color: '#3B82F6' },
@@ -301,34 +434,137 @@ export const ForecastView: React.FC = () => {
         {
           name: 'AI Predicted Demand',
           type: 'line',
-          data: chartTimeline.predicted,
+          data: demandChartData.predicted,
           smooth: true,
           itemStyle: { color: '#8B5CF6' },
           lineStyle: { width: 3, color: '#8B5CF6' },
           areaStyle: {
             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(139, 92, 246, 0.3)' },
+              { offset: 0, color: 'rgba(139, 92, 246, 0.35)' },
               { offset: 1, color: 'rgba(139, 92, 246, 0.0)' },
             ]),
           },
         },
         {
-          name: 'Confidence Upper (95%)',
+          name: 'Statistical Baseline (AR-7)',
           type: 'line',
-          data: chartTimeline.upper,
+          data: demandChartData.baseline,
           smooth: true,
-          lineStyle: { color: '#06B6D4', type: 'dashed', width: 1.5 },
+          lineStyle: { color: 'rgba(148, 163, 184, 0.6)', type: 'dotted', width: 2 },
+          symbol: 'none',
         },
         {
-          name: 'Confidence Lower (95%)',
+          name: '95% Confidence Upper Band',
           type: 'line',
-          data: chartTimeline.lower,
+          data: demandChartData.upper,
+          smooth: true,
+          lineStyle: { color: '#06B6D4', type: 'dashed', width: 1.5 },
+          symbol: 'none',
+        },
+        {
+          name: '95% Confidence Lower Band',
+          type: 'line',
+          data: demandChartData.lower,
           smooth: true,
           lineStyle: { color: '#64748B', type: 'dotted', width: 1.5 },
+          symbol: 'none',
         },
       ],
     };
-  }, [chartTimeline]);
+  }, [demandChartData]);
+
+  // Chart 2: Inventory Buffer & Stockout Velocity ECharts Option
+  const inventoryVelocityOption = useMemo(() => {
+    const projections = forecastResponse?.inventoryProjections || [];
+    if (projections.length === 0) return null;
+
+    const dates = projections.map((p) => p.date);
+    const stocks = projections.map((p) => p.projectedStock);
+    const safetyFloors = projections.map((p) => p.safetyStockFloor);
+    const rops = projections.map((p) => p.reorderTriggerPoint);
+
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(15, 23, 42, 0.95)',
+        borderColor: 'rgba(6, 182, 212, 0.4)',
+        borderWidth: 1,
+        textStyle: { color: '#f8fafc', fontSize: 12 },
+        formatter: (params: any) => {
+          if (!Array.isArray(params) || params.length === 0) return '';
+          let html = `<div class="font-bold text-white mb-1 border-b border-white/10 pb-1 font-mono">${params[0].axisValue}</div>`;
+          params.forEach((item: any) => {
+            if (item.value !== null && item.value !== undefined) {
+              html += `<div class="flex items-center justify-between gap-4 py-0.5 text-xs">
+                <span style="color: ${item.color}">● ${item.seriesName}:</span>
+                <span class="font-mono font-bold text-white">${Number(item.value).toLocaleString()} Units</span>
+              </div>`;
+            }
+          });
+          return html;
+        },
+      },
+      legend: {
+        data: ['Projected Inventory', 'Dynamic Reorder Point', 'Safety Stock Floor'],
+        textStyle: { color: '#94a3b8', fontSize: 11 },
+        top: 0,
+        right: 10,
+      },
+      grid: { left: '3%', right: '3%', bottom: '4%', top: '16%', containLabel: true },
+      xAxis: {
+        type: 'category',
+        data: dates,
+        axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } },
+        axisLabel: {
+          color: '#94a3b8',
+          fontSize: 10,
+          rotate: dates.length > 50 ? 35 : 0,
+        },
+      },
+      yAxis: {
+        type: 'value',
+        axisLine: { show: false },
+        splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)', type: 'dashed' } },
+        axisLabel: {
+          color: '#94a3b8',
+          fontSize: 11,
+          formatter: (val: number) => (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : `${Math.round(val)}`),
+        },
+      },
+      series: [
+        {
+          name: 'Projected Inventory',
+          type: 'bar',
+          barWidth: '45%',
+          data: stocks,
+          itemStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: '#38bdf8' },
+              { offset: 1, color: '#1e40af' },
+            ]),
+            borderRadius: [4, 4, 0, 0],
+          },
+        },
+        {
+          name: 'Dynamic Reorder Point',
+          type: 'line',
+          data: rops,
+          lineStyle: { color: '#f59e0b', width: 2, type: 'dashed' },
+          symbol: 'circle',
+          symbolSize: 4,
+          itemStyle: { color: '#f59e0b' },
+        },
+        {
+          name: 'Safety Stock Floor',
+          type: 'line',
+          data: safetyFloors,
+          lineStyle: { color: '#ef4444', width: 2.5, type: 'solid' },
+          symbol: 'none',
+        },
+      ],
+    };
+  }, [forecastResponse]);
 
   // Commodity chart option
   const fallbackCommodity = {
@@ -385,19 +621,45 @@ export const ForecastView: React.FC = () => {
     ],
   };
 
+  // Table rows combining future projections with actuals
+  const tableRows = useMemo(() => {
+    const projections = forecastResponse?.inventoryProjections || [];
+    const forecastPoints = forecastResponse?.forecast || [];
 
+    const rows = forecastPoints.map((pt, idx) => {
+      const proj = projections[idx];
+      return {
+        day: idx + 1,
+        date: pt.date,
+        forecastDemand: pt.predictedDemandUnits,
+        confidenceLower: pt.confidenceLower,
+        confidenceUpper: pt.confidenceUpper,
+        baselineDemand: pt.historicalBaseline,
+        projectedStock: proj ? proj.projectedStock : pt.projectedStock ?? '—',
+        safetyStockFloor: proj ? proj.safetyStockFloor : pt.safetyStockFloor ?? '—',
+        reorderTrigger: proj ? proj.reorderTriggerPoint : pt.reorderTriggerPoint ?? '—',
+        status: proj ? proj.status : 'optimal',
+      };
+    });
+
+    if (!tableSearch.trim()) return rows;
+    return rows.filter((r) => r.date.includes(tableSearch.trim()) || r.status.includes(tableSearch.trim().toLowerCase()));
+  }, [forecastResponse, tableSearch]);
+
+  const totalTablePages = Math.max(1, Math.ceil(tableRows.length / pageSize));
+  const paginatedRows = tableRows.slice((tablePage - 1) * pageSize, tablePage * pageSize);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      {/* Header and Controls Row */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-xl sm:text-2xl font-bold text-white font-display tracking-tight">
               Predictive AI Forecast Center
             </h2>
             <NeonBadge variant={isDemoFallback ? 'warning' : 'purple'} size="sm">
-              {forecastResponse?.modelVersion || 'PROPHET'}
+              {forecastResponse?.algorithm ? `${forecastResponse.algorithm} (${forecastHorizon}d)` : `PROPHET (${forecastHorizon}d)`}
             </NeonBadge>
             {historyProvenance?.dataSource === 'retail_dataset_actual' && (
               <span className="text-[10px] uppercase font-mono font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
@@ -419,14 +681,14 @@ export const ForecastView: React.FC = () => {
             )}
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Enterprise Bayesian demand forecasting, automated safety buffer optimization, and commodity pricing trends.
+            Deterministic Bayesian demand forecasting, multi-horizon stockout velocity modeling, and commodity spot pricing trends.
           </p>
         </div>
 
-        {/* Controls: Horizon & Refresh */}
+        {/* Phase 1: 30 / 60 / 90 Days Horizon Selector */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/80 border border-white/10">
-            {([30, 60, 90, 180] as const).map((h) => (
+            {([30, 60, 90] as const).map((h) => (
               <button
                 key={h}
                 disabled={isLoading}
@@ -434,10 +696,11 @@ export const ForecastView: React.FC = () => {
                   soundFX.playClick();
                   setForecastHorizon(h);
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${forecastHorizon === h
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  forecastHorizon === h
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-50'
-                  }`}
+                }`}
               >
                 {h} Days
               </button>
@@ -458,7 +721,22 @@ export const ForecastView: React.FC = () => {
         </div>
       </div>
 
-      {/* Product / SKU Selector & Inventory Context Strip */}
+      {/* Date Horizon Range Banner */}
+      {forecastResponse?.startDate && forecastResponse?.endDate && (
+        <div className="flex items-center justify-between text-xs px-4 py-2 rounded-xl bg-slate-900/40 border border-white/5 text-slate-300">
+          <div className="flex items-center gap-2 font-mono">
+            <Calendar className="w-4 h-4 text-cyan-400" />
+            <span>
+              Forecast Window: <strong>{forecastResponse.startDate}</strong> &rarr; <strong>{forecastResponse.endDate}</strong> ({forecastHorizon} Daily Calendar Projections)
+            </span>
+          </div>
+          <span className="text-[11px] text-slate-500 font-mono">
+            Granularity: {forecastResponse.granularity || 'Daily'} &bull; Confidence: 95%
+          </span>
+        </div>
+      )}
+
+      {/* Product / SKU Selector & Facility Strip */}
       <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -497,7 +775,7 @@ export const ForecastView: React.FC = () => {
         </div>
       </div>
 
-      {/* Informative Warning Banner for Live PostgreSQL SKUs without Sales History */}
+      {/* Warning for Live PostgreSQL SKUs without Sales History */}
       {skuDataWarning && (
         <div className="rounded-2xl p-4 bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200 space-y-2">
           <div className="flex items-center gap-2.5">
@@ -535,7 +813,7 @@ export const ForecastView: React.FC = () => {
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
             <span>
-              <strong>DEMO FALLBACK:</strong> Backend service offline or returned error ({errorMessage}). Rendering verified 30-day synthetic baseline observations.
+              <strong>DEMO FALLBACK:</strong> Backend service offline or returned error ({errorMessage}). Rendering verified {forecastHorizon}-day baseline observations.
             </span>
           </div>
           <button
@@ -547,117 +825,100 @@ export const ForecastView: React.FC = () => {
         </div>
       )}
 
-      {/* Inventory Decision Policy KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Card 1: On-Hand Stock vs ROP Status */}
+      {/* Phase 3: 6 Top KPI Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        {/* Card 1: Current Daily Demand */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Current On-Hand Stock</span>
-            <Boxes className="w-4 h-4 text-cyan-400" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-cyan-300">
-            {currentItem ? `${currentItem.currentStock.toLocaleString()} units` : '—'}
-          </div>
-          <div className="text-[11px] font-mono-telemetry pt-1 border-t border-white/5 truncate flex items-center justify-between">
-            {inventoryPolicy?.reorderRequired ? (
-              <span className="text-rose-400 font-bold flex items-center gap-1">
-                ● REORDER NEEDED (+{inventoryPolicy?.recommendedReorderQuantity?.toLocaleString() || 0})
-              </span>
-            ) : (
-              <span className="text-emerald-400 font-bold flex items-center gap-1">
-                ● BUFFER OPTIMAL
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Card 2: Expected Lead-Time Demand */}
-        <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Expected Lead-Time Demand</span>
-            <PackageCheck className="w-4 h-4 text-blue-400" />
+            <span className="text-xs font-medium text-slate-400">Current Demand</span>
+            <Clock className="w-4 h-4 text-blue-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-white">
-            {inventoryPolicy?.expectedLeadTimeDemand
-              ? `${inventoryPolicy.expectedLeadTimeDemand.toLocaleString()} units`
-              : '—'}
-          </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5">
-            <span>Horizon: {leadTimeDays} days</span>
-            <div className="flex items-center gap-1">
-              <span>Lead Time:</span>
-              <select
-                value={leadTimeDays}
-                onChange={(e) => {
-                  soundFX.playClick();
-                  setLeadTimeDays(Number(e.target.value));
-                }}
-                className="bg-slate-900 text-blue-300 font-bold border border-white/10 rounded px-1 py-0.5 text-[11px] cursor-pointer"
-              >
-                <option value={3}>3d</option>
-                <option value={5}>5d</option>
-                <option value={7}>7d</option>
-                <option value={14}>14d</option>
-                <option value={21}>21d</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Safety Stock */}
-        <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Recommended Safety Stock</span>
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div className="text-2xl font-bold font-mono text-emerald-300">
-            {inventoryPolicy?.safetyStock !== undefined && inventoryPolicy?.safetyStock !== null
-              ? `+${inventoryPolicy.safetyStock.toLocaleString()} units`
-              : '—'}
+            {kpis.currentDailyDemand.toLocaleString()} <span className="text-xs text-slate-400 font-normal">u/day</span>
           </div>
           <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
-            Target Service Level: {(targetServiceLevel * 100).toFixed(0)}% (CSL)
+            Recent 14-day trailing average
           </div>
         </div>
 
-        {/* Card 4: Reorder Point (ROP) */}
+        {/* Card 2: Forecasted Total Demand */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Reorder Point (ROP)</span>
+            <span className="text-xs font-medium text-slate-400">Forecasted Demand</span>
             <TrendingUp className="w-4 h-4 text-purple-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-purple-300">
-            {inventoryPolicy?.reorderPoint
-              ? `${inventoryPolicy.reorderPoint.toLocaleString()} units`
-              : '—'}
+            {kpis.forecastTotalDemand.toLocaleString()} <span className="text-xs text-slate-400 font-normal">units</span>
           </div>
           <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
-            ROP = Demand ({inventoryPolicy?.expectedLeadTimeDemand || 0}) + SS ({inventoryPolicy?.safetyStock || 0})
+            {forecastHorizon}-Day total ({kpis.forecastDailyAvg} u/day)
           </div>
         </div>
 
-        {/* Card 5: Uncertainty & Evaluation Metrics */}
+        {/* Card 3: Expected Demand Change */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Out-of-Sample Accuracy</span>
-            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-medium text-slate-400">Expected Demand Shift</span>
+            {kpis.demandShiftPct >= 0 ? (
+              <TrendingUp className="w-4 h-4 text-rose-400" />
+            ) : (
+              <TrendingDown className="w-4 h-4 text-emerald-400" />
+            )}
           </div>
-          <div className="text-xl font-bold font-mono text-amber-300">
-            {forecastResponse?.metrics?.wape !== null && forecastResponse?.metrics?.wape !== undefined
-              ? `WAPE: ${forecastResponse.metrics.wape.toFixed(1)}%`
-              : forecastResponse?.metrics?.mae !== null && forecastResponse?.metrics?.mae !== undefined
-                ? `MAE: ${forecastResponse.metrics.mae.toFixed(1)}`
-                : 'Evaluated'}
+          <div className={`text-2xl font-bold font-mono ${kpis.demandShiftPct >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+            {kpis.demandShiftPct >= 0 ? `+${kpis.demandShiftPct}%` : `${kpis.demandShiftPct}%`}
           </div>
           <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
-            {forecastResponse?.metrics?.rmse
-              ? `RMSE: ${forecastResponse.metrics.rmse.toFixed(1)} units`
-              : 'Holdout backtest validation'}
+            Compared to historical baseline
+          </div>
+        </div>
+
+        {/* Card 4: Current On-Hand Inventory */}
+        <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Current Stock</span>
+            <Boxes className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="text-2xl font-bold font-mono text-cyan-300">
+            {kpis.currentStock.toLocaleString()} <span className="text-xs text-slate-400 font-normal">units</span>
+          </div>
+          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+            {currentItem?.warehouse || 'Warehouse'}
+          </div>
+        </div>
+
+        {/* Card 5: Days of Inventory Remaining */}
+        <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Days of Inventory</span>
+            <PackageCheck className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="text-2xl font-bold font-mono text-emerald-300">
+            {kpis.daysOfSupply} <span className="text-xs text-slate-400 font-normal">days</span>
+          </div>
+          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+            Lead time: {leadTimeDays}d cycle
+          </div>
+        </div>
+
+        {/* Card 6: Projected Stockout Risk */}
+        <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-400">Projected Stockout Risk</span>
+            <ShieldAlert className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="pt-1">
+            <NeonBadge variant={kpis.stockoutRiskVariant} size="sm">
+              {kpis.stockoutRiskText}
+            </NeonBadge>
+          </div>
+          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+            Over {forecastHorizon}-day horizon
           </div>
         </div>
       </div>
 
-      {/* Demand Projection Chart */}
+      {/* Main Chart 1: Global Demand Forecast & Multi-Horizon Prediction */}
       <GlassCard
         title={`Finished Goods Demand Projection (${forecastHorizon}-Day Calendar Horizon)`}
         subtitle={
@@ -680,28 +941,280 @@ export const ForecastView: React.FC = () => {
             <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-10 rounded-xl">
               <div className="flex items-center gap-2 text-sm text-purple-300 font-mono font-semibold">
                 <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
-                <span>Computing Bayesian Forecast & Inventory Policy...</span>
+                <span>Computing Bayesian Forecast & Multi-Horizon Projections...</span>
               </div>
             </div>
           )}
           <ReactECharts option={demandOption} style={{ height: '100%', width: '100%' }} notMerge={true} />
         </div>
+      </GlassCard>
 
-        {/* Policy Assumptions & Model Metadata Drawer */}
-        {inventoryPolicy?.assumptions && inventoryPolicy.assumptions.length > 0 && (
-          <div className="mt-4 pt-3 border-t border-white/10 text-[11px] text-slate-400 space-y-1">
-            <div className="flex items-center gap-1 text-slate-300 font-semibold">
-              <Info className="w-3.5 h-3.5 text-blue-400" />
-              <span>Model & Inventory Policy Assumptions:</span>
+      {/* Main Chart 2: Inventory Buffer & Stockout Velocity (Restored from Original Design) */}
+      <GlassCard
+        title={`Inventory Buffer & Stockout Velocity (${forecastHorizon}-Day Multi-Echelon Trajectory)`}
+        subtitle="Multi-echelon projected warehouse inventory vs safety stock floor and dynamic reorder threshold"
+        badge={
+          <div className="flex items-center gap-1.5 text-xs text-cyan-300 bg-cyan-500/10 border border-cyan-400/30 px-2.5 py-0.5 rounded-full">
+            <PackageCheck className="w-3.5 h-3.5 text-cyan-400" />
+            <span>ROP: {inventoryPolicy?.reorderPoint ?? 150} Units</span>
+          </div>
+        }
+      >
+        <div className="relative h-72 w-full">
+          {inventoryVelocityOption ? (
+            <ReactECharts option={inventoryVelocityOption} style={{ height: '100%', width: '100%' }} notMerge={true} />
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-500 text-xs">
+              No inventory trajectory projections available for this SKU.
             </div>
-            <ul className="list-disc list-inside space-y-0.5 pl-1 font-mono-telemetry text-slate-400">
-              {inventoryPolicy.assumptions.map((asm, i) => (
-                <li key={i}>{asm}</li>
+          )}
+        </div>
+      </GlassCard>
+
+      {/* Model Transparency & Comparative Baseline Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Model Specs & Holdout Backtest Metrics */}
+        <div className="rounded-2xl glass-panel border border-white/10 p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white font-display">Forecasting Model Information</h3>
+              <p className="text-xs text-slate-400">Verifiable architecture and evaluation criteria</p>
+            </div>
+            <NeonBadge variant="blue" size="sm">Prophet + AR-7</NeonBadge>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-slate-400">Primary Algorithm:</span>
+              <span className="font-semibold text-white">{forecastResponse?.algorithm || 'Prophet'}</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-slate-400">Model Version:</span>
+              <span className="font-mono text-purple-300">{forecastResponse?.modelVersion || 'prophet-daily-v1'}</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-slate-400">Comparative Baseline:</span>
+              <span className="font-semibold text-slate-300">AutoRegressive (AR-7) + Linear Trend</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-slate-400">Horizon & Granularity:</span>
+              <span className="font-mono text-cyan-300">{forecastHorizon} Days &bull; Daily</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-slate-400">Holdout Backtest Split:</span>
+              <span className="font-mono text-slate-300">{forecastResponse?.metrics?.evaluation_split || 'Chronological Holdout'}</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-slate-400">Holdout WAPE Error:</span>
+              <span className="font-mono font-bold text-amber-300">
+                {forecastResponse?.metrics?.wape !== undefined && forecastResponse?.metrics?.wape !== null
+                  ? `${forecastResponse.metrics.wape.toFixed(1)}%`
+                  : 'N/A'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-white/5">
+              <span className="text-slate-400">Mean Absolute Error (MAE):</span>
+              <span className="font-mono text-white">
+                {forecastResponse?.metrics?.mae !== undefined && forecastResponse?.metrics?.mae !== null
+                  ? `${forecastResponse.metrics.mae.toFixed(1)} units`
+                  : 'N/A'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-1">
+              <span className="text-slate-400">Root Mean Squared Error (RMSE):</span>
+              <span className="font-mono text-white">
+                {forecastResponse?.metrics?.rmse !== undefined && forecastResponse?.metrics?.rmse !== null
+                  ? `${forecastResponse.metrics.rmse.toFixed(1)} units`
+                  : 'N/A'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Operational Alerts & Prescriptive Recommendations */}
+        <div className="lg:col-span-2 rounded-2xl glass-panel border border-white/10 p-5 space-y-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-white font-display flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-cyan-400" />
+                <span>Forecast-Driven Supply & Replenishment Alerts</span>
+              </h3>
+              <p className="text-xs text-slate-400">Automated risk detection based on demand trajectory and lead times</p>
+            </div>
+            <NeonBadge variant="cyan" size="sm">Rule-Based Reasoning</NeonBadge>
+          </div>
+
+          {forecastResponse?.alerts && forecastResponse.alerts.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {forecastResponse.alerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className="p-3 rounded-xl bg-slate-900/60 border border-white/5 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      {alert.severity === 'critical' ? (
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      )}
+                      {alert.title}
+                    </span>
+                    <NeonBadge variant={alert.severity === 'critical' ? 'critical' : 'warning'} size="sm">
+                      {alert.type}
+                    </NeonBadge>
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">{alert.description}</p>
+                </div>
               ))}
-            </ul>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>All inventory buffers and demand trajectories are within normal operating parameters.</span>
+            </div>
+          )}
+
+          {/* Actionable Recommendations */}
+          <div className="pt-2 border-t border-white/5 space-y-2">
+            <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              Prescriptive Recommendations:
+            </h4>
+            {forecastResponse?.recommendations && forecastResponse.recommendations.length > 0 ? (
+              <div className="space-y-2">
+                {forecastResponse.recommendations.map((rec) => (
+                  <div key={rec.id} className="p-3 rounded-xl bg-slate-800/40 border border-white/5 text-xs space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-cyan-300">{rec.category}</span>
+                      <NeonBadge variant={rec.priority === 'CRITICAL' ? 'critical' : rec.priority === 'HIGH' ? 'warning' : 'optimal'} size="sm">
+                        {rec.priority}
+                      </NeonBadge>
+                    </div>
+                    <p className="text-slate-200 font-medium">{rec.action}</p>
+                    <p className="text-slate-400 text-[11px]">{rec.rationale}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">No active recommendations required at this time.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Phase 3: Forecast Summary Data Table */}
+      <div className="rounded-2xl glass-panel border border-white/10 p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-white font-display flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4 text-blue-400" />
+              <span>Multi-Horizon Forecast & Projected Inventory Summary</span>
+            </h3>
+            <p className="text-xs text-slate-400">Daily chronological sequence for {selectedSku} ({forecastHorizon} days)</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search date or status..."
+                value={tableSearch}
+                onChange={(e) => {
+                  setTableSearch(e.target.value);
+                  setTablePage(1);
+                }}
+                className="bg-slate-900 border border-white/10 text-white rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:border-blue-500 w-44"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider text-[10px] font-mono border-b border-white/10">
+              <tr>
+                <th className="py-2.5 px-3">Day</th>
+                <th className="py-2.5 px-3">Date</th>
+                <th className="py-2.5 px-3">Forecast Demand</th>
+                <th className="py-2.5 px-3">95% Bounds</th>
+                <th className="py-2.5 px-3">Statistical Baseline</th>
+                <th className="py-2.5 px-3">Projected Stock</th>
+                <th className="py-2.5 px-3">Safety Stock Floor</th>
+                <th className="py-2.5 px-3">Buffer Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5 font-mono">
+              {paginatedRows.length > 0 ? (
+                paginatedRows.map((row) => (
+                  <tr key={row.date} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-2 px-3 text-slate-400">Day {row.day}</td>
+                    <td className="py-2 px-3 text-white font-semibold">{row.date}</td>
+                    <td className="py-2 px-3 text-purple-300 font-bold">{row.forecastDemand.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-slate-400 text-[11px]">
+                      [{row.confidenceLower.toLocaleString()} &ndash; {row.confidenceUpper.toLocaleString()}]
+                    </td>
+                    <td className="py-2 px-3 text-slate-300">{row.baselineDemand?.toLocaleString() ?? '—'}</td>
+                    <td className="py-2 px-3 font-bold text-cyan-300">
+                      {typeof row.projectedStock === 'number' ? row.projectedStock.toLocaleString() : row.projectedStock}
+                    </td>
+                    <td className="py-2 px-3 text-slate-400">{row.safetyStockFloor}</td>
+                    <td className="py-2 px-3 font-sans">
+                      <NeonBadge
+                        variant={row.status === 'stockout' || row.status === 'critical' ? 'critical' : row.status === 'warning' ? 'warning' : 'optimal'}
+                        size="sm"
+                      >
+                        {row.status.toUpperCase()}
+                      </NeonBadge>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-500">
+                    No forecast rows matched the query.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination controls */}
+        {totalTablePages > 1 && (
+          <div className="flex items-center justify-between text-xs text-slate-400 border-t border-white/5 pt-3">
+            <span>
+              Showing Page {tablePage} of {totalTablePages} ({tableRows.length} total rows)
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={tablePage === 1}
+                onClick={() => {
+                  soundFX.playClick();
+                  setTablePage((p) => Math.max(1, p - 1));
+                }}
+              >
+                <ChevronLeft className="w-3.5 h-3.5 mr-1" />
+                Previous
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={tablePage === totalTablePages}
+                onClick={() => {
+                  soundFX.playClick();
+                  setTablePage((p) => Math.min(totalTablePages, p + 1));
+                }}
+              >
+                Next
+                <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </div>
           </div>
         )}
-      </GlassCard>
+      </div>
 
       {/* Commodity & Material Price Trends (Preserved Existing Capability) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -720,16 +1233,18 @@ export const ForecastView: React.FC = () => {
                   soundFX.playClick();
                   setSelectedCommodity(c.materialName);
                 }}
-                className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer border ${selectedCommodity === c.materialName
+                className={`w-full p-3 rounded-xl text-left transition-all cursor-pointer border ${
+                  selectedCommodity === c.materialName
                     ? 'bg-amber-500/15 border-amber-500/40 shadow-sm'
                     : 'bg-slate-900/40 border-white/5 hover:bg-white/5'
-                  }`}
+                }`}
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-white truncate">{c.materialName}</span>
                   <span
-                    className={`text-xs font-mono font-semibold ${c.changePct30d >= 0 ? 'text-rose-400' : 'text-emerald-400'
-                      }`}
+                    className={`text-xs font-mono font-semibold ${
+                      c.changePct30d >= 0 ? 'text-rose-400' : 'text-emerald-400'
+                    }`}
                   >
                     {c.changePct30d >= 0 ? `+${c.changePct30d}%` : `${c.changePct30d}%`}
                   </span>

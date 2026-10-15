@@ -9,8 +9,9 @@ import asyncio
 import importlib.metadata
 import logging
 import math
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import prophet
@@ -30,6 +31,9 @@ from app.services.forecasting.prophet_forecast import (
     ForecastingService,
     MODEL_VERSION,
 )
+from app.services.forecasting.baseline_forecast import (
+    BaselineForecaster,
+)
 from app.services.forecasting.inventory_decision import (
     InventoryDecisionModule,
 )
@@ -48,6 +52,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["forecasting"])
 
 forecast_service = ForecastingService()
+baseline_service = BaselineForecaster()
 inventory_module = InventoryDecisionModule()
 
 
@@ -467,10 +472,9 @@ def get_demand_history_route(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"Product '{clean_sku}' ({product.name}) exists in PostgreSQL, "
-                f"but has insufficient historical demand observations: {len(demand_obs)} daily observations, "
+                f"but historical demand is insufficient: {len(demand_obs)} daily observations, "
                 f"{sales_count} sales records, and {order_items_count} order line items were found. "
-                "SynChain AI requires validated daily observations and "
-                "never silently substitutes synthetic data into live production records."
+                "SynChain AI requires validated daily observations and synthetic data will not be substituted into live production records."
             ),
         )
 
@@ -478,6 +482,212 @@ def get_demand_history_route(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Product SKU '{clean_sku}' was not found.",
     )
+
+
+def _calculate_forecast_inventory_projection(
+    forecast_points: List[Dict[str, Any]],
+    current_stock: float,
+    safety_stock: float,
+    reorder_point: float,
+    lead_time_days: int = 7,
+    reorder_quantity: float = 100.0,
+) -> Dict[str, Any]:
+    """
+    Simulates multi-horizon daily inventory depletion and automated replenishment.
+    """
+    stock = float(current_stock)
+    ss = float(safety_stock)
+    rop = float(reorder_point)
+    lt = max(1, int(lead_time_days))
+    qty = max(1.0, float(reorder_quantity))
+
+    pending_orders: List[Dict[str, Any]] = []
+    projections: List[Dict[str, Any]] = []
+    stockout_day = None
+    stockout_date = None
+    total_demand = 0.0
+
+    for day_idx, pt in enumerate(forecast_points, start=1):
+        date_str = pt.get("date", f"Day {day_idx}")
+        demand_val = float(pt.get("predictedDemandUnits", pt.get("predicted_demand", 0.0)))
+        total_demand += demand_val
+
+        # Deliver pending orders due today
+        replenishment_today = 0.0
+        remaining_orders = []
+        for order in pending_orders:
+            if order["arrival_day"] == day_idx:
+                replenishment_today += order["quantity"]
+            else:
+                remaining_orders.append(order)
+        pending_orders = remaining_orders
+
+        # Update stock position
+        stock_with_inflow = stock + replenishment_today
+        stock_after_demand = max(0.0, stock_with_inflow - demand_val)
+        stock = stock_after_demand
+
+        # Record first stockout day
+        if stock == 0.0 and stockout_day is None:
+            stockout_day = day_idx
+            stockout_date = date_str
+
+        # Place reorder when stock drops to or below ROP (if no order currently in transit)
+        if stock <= rop and len(pending_orders) == 0:
+            order_qty = max(qty, math.ceil(rop - stock + (demand_val * lt)))
+            pending_orders.append({
+                "arrival_day": day_idx + lt,
+                "quantity": order_qty
+            })
+
+        # Classification
+        if stock == 0.0:
+            buf_status = "stockout"
+        elif stock < ss:
+            buf_status = "critical"
+        elif stock <= rop:
+            buf_status = "warning"
+        else:
+            buf_status = "optimal"
+
+        proj_item = {
+            "day": day_idx,
+            "date": date_str,
+            "demand": round(demand_val, 2),
+            "projectedStock": round(stock, 1),
+            "safetyStockFloor": round(ss, 1),
+            "reorderTriggerPoint": round(rop, 1),
+            "replenishmentUnits": round(replenishment_today, 1),
+            "status": buf_status,
+        }
+        projections.append(proj_item)
+        pt["projectedStock"] = round(stock, 1)
+        pt["safetyStockFloor"] = round(ss, 1)
+        pt["reorderTriggerPoint"] = round(rop, 1)
+        pt["replenishmentUnits"] = round(replenishment_today, 1)
+
+    horizon = len(forecast_points)
+    avg_daily_demand = total_demand / max(1, horizon)
+    days_of_supply = round(current_stock / avg_daily_demand, 1) if avg_daily_demand > 0 else 999.0
+
+    return {
+        "projections": projections,
+        "daysOfSupply": days_of_supply,
+        "stockoutDay": stockout_day,
+        "stockoutDate": stockout_date,
+        "reorderRequired": current_stock <= rop,
+        "averageDailyDemand": round(avg_daily_demand, 2),
+    }
+
+
+def _generate_forecast_alerts_and_recommendations(
+    historical_data: List[Dict[str, Any]],
+    forecast_points: List[Dict[str, Any]],
+    current_stock: Optional[float],
+    safety_stock: Optional[float],
+    reorder_point: Optional[float],
+    lead_time_days: int,
+    reorder_quantity: float,
+    stockout_day: Optional[int],
+    stockout_date: Optional[str],
+    days_of_supply: Optional[float],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Generates explainable operational alerts and recommendations from forecast results."""
+    alerts = []
+    recommendations = []
+
+    # 1. Demand Surge Check
+    hist_demands = [
+        float(p.get("demand", p.get("actualDemandUnits", 0.0)))
+        for p in historical_data
+        if p.get("demand") is not None or p.get("actualDemandUnits") is not None
+    ]
+    hist_avg = sum(hist_demands) / max(1, len(hist_demands)) if hist_demands else 0.0
+    fcast_demands = [float(p.get("predictedDemandUnits", 0.0)) for p in forecast_points]
+    fcast_avg = sum(fcast_demands) / max(1, len(fcast_demands)) if fcast_demands else 0.0
+
+    if hist_avg > 0 and fcast_avg > hist_avg * 1.20:
+        surge_pct = round(((fcast_avg - hist_avg) / hist_avg) * 100, 1)
+        alerts.append({
+            "id": "alert-demand-surge",
+            "type": "demand_surge",
+            "severity": "warning",
+            "title": f"Projected Demand Surge (+{surge_pct}%)",
+            "description": f"Forecasted average daily demand ({round(fcast_avg, 1)} units) is {surge_pct}% above historical baseline ({round(hist_avg, 1)} units).",
+            "metric": f"+{surge_pct}%",
+        })
+        recommendations.append({
+            "id": "rec-surge-buffer",
+            "category": "Buffer Adjustment",
+            "priority": "HIGH",
+            "action": f"Adjust safety stock target upward by {min(50, int(surge_pct * 0.5))}% to prevent buffer depletion under surge velocity.",
+            "rationale": f"Demand velocity increases by {surge_pct}%, risking premature safety stock breaches before standard replenishment arrivals.",
+        })
+
+    # 2. Stockout Check
+    if stockout_day is not None and stockout_date:
+        alerts.append({
+            "id": "alert-stockout-imminent",
+            "type": "stockout_risk",
+            "severity": "critical",
+            "title": f"Stockout Predicted on Day {stockout_day} ({stockout_date})",
+            "description": f"Warehouse inventory is projected to reach zero units on {stockout_date} at the forecasted consumption rate.",
+            "metric": f"Day {stockout_day}",
+        })
+        expedite_window = max(1, stockout_day - lead_time_days)
+        recommendations.append({
+            "id": "rec-stockout-mitigation",
+            "category": "Emergency Replenishment",
+            "priority": "CRITICAL",
+            "action": f"Initiate expedited procurement within {expedite_window} calendar days or arrange priority air freight with primary supplier.",
+            "rationale": f"Depletion to zero units occurs on Day {stockout_day}, leaving insufficient lead time ({lead_time_days} days) for normal replenishment.",
+        })
+    elif days_of_supply is not None and days_of_supply < float(lead_time_days):
+        alerts.append({
+            "id": "alert-lead-time-breach",
+            "type": "lead_time_risk",
+            "severity": "critical",
+            "title": f"Lead Time Exceeds Days of Supply ({days_of_supply}d < {lead_time_days}d)",
+            "description": f"Only {days_of_supply} days of inventory remain, which is shorter than the {lead_time_days}-day supplier procurement lead time.",
+            "metric": f"{days_of_supply}d supply",
+        })
+        recommendations.append({
+            "id": "rec-lead-time-action",
+            "category": "Procurement Expedite",
+            "priority": "CRITICAL",
+            "action": f"Place immediate order for {int(reorder_quantity or 100)} units and request expedited fulfillment from supplier.",
+            "rationale": f"Negative lead-time gap of {round(lead_time_days - days_of_supply, 1)} days poses an imminent stockout risk.",
+        })
+
+    # 3. Reorder Point Trigger
+    if current_stock is not None and reorder_point is not None and current_stock <= reorder_point:
+        alerts.append({
+            "id": "alert-reorder-triggered",
+            "type": "reorder_point",
+            "severity": "warning" if (safety_stock is not None and current_stock > safety_stock) else "critical",
+            "title": "Inventory Has Reached Reorder Point (ROP)",
+            "description": f"Current stock ({int(current_stock)} units) is at or below the reorder trigger threshold ({int(reorder_point)} units).",
+            "metric": f"{int(current_stock)} / {int(reorder_point)} ROP",
+        })
+        recommendations.append({
+            "id": "rec-reorder-standard",
+            "category": "Standard Order",
+            "priority": "HIGH",
+            "action": f"Release standard replenishment order of {int(reorder_quantity or 100)} units to maintain {int(safety_stock or 0)} unit safety floor.",
+            "rationale": f"Current inventory level triggers replenishment according to the inventory decision policy.",
+        })
+
+    # Default positive recommendation if optimal
+    if not recommendations:
+        recommendations.append({
+            "id": "rec-optimal-buffer",
+            "category": "Policy Monitoring",
+            "priority": "LOW",
+            "action": "Maintain normal procurement schedule. Inventory buffers are sufficient to fulfill demand across the forecast horizon.",
+            "rationale": "Projected inventory remains above safety stock thresholds throughout the evaluation period.",
+        })
+
+    return alerts, recommendations
 
 
 @router.post(
@@ -494,14 +704,97 @@ def get_demand_history_route(
     summary="Legacy demand forecast endpoint",
 )
 async def generate_demand_forecast_route(request: DemandForecastRequest):
-    """Generate a forecast without blocking the event loop."""
+    """Generate a multi-horizon forecast with statistical baseline and inventory projection."""
     try:
+        # 1. Primary Prophet forecast
         result = await asyncio.to_thread(
             forecast_service.generate_demand_forecast,
             historical_data=request.historicalData,
             horizon=request.horizonDays,
             evaluate=request.evaluate,
+            interval_width=request.intervalWidth,
         )
+
+        # 2. Comparative statistical baseline forecaster (AR-7 + Linear Trend)
+        baseline_forecast = []
+        baseline_metrics = None
+        try:
+            bf = BaselineForecaster()
+            base_res = await asyncio.to_thread(
+                bf.fit_and_forecast,
+                historical_data=request.historicalData,
+                horizon=request.horizonDays,
+                evaluate=request.evaluate,
+            )
+            baseline_forecast = base_res.get("forecast", [])
+            baseline_metrics = base_res.get("metrics")
+        except Exception:
+            logger.warning("Baseline forecaster failed, continuing with Prophet.")
+
+        # Harmonize baseline into forecast points
+        forecast_pts = result.get("forecast", [])
+        for i, pt in enumerate(forecast_pts):
+            if i < len(baseline_forecast):
+                pt["historicalBaseline"] = baseline_forecast[i].get("predictedDemandUnits")
+            else:
+                pt["historicalBaseline"] = pt.get("predictedDemandUnits")
+
+        result["baselineForecast"] = baseline_forecast
+        result["baselineMetrics"] = baseline_metrics
+
+        # 3. Date boundaries and granularity
+        if forecast_pts:
+            result["startDate"] = forecast_pts[0].get("date")
+            result["endDate"] = forecast_pts[-1].get("date")
+        result["granularity"] = "Daily"
+        result["dataFreshnessTimestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # 4. Inventory projection over the horizon
+        stock_val = request.currentStock
+        safety_val = request.safetyStock or 0.0
+        rop_val = request.reorderPoint or (safety_val + 50.0)
+        lt_val = request.leadTimeDays or 7
+        ro_qty = request.reorderQuantity or 100.0
+
+        stockout_day = None
+        stockout_date = None
+        days_of_supply = None
+        reorder_req = None
+
+        if stock_val is not None:
+            inv_calc = _calculate_forecast_inventory_projection(
+                forecast_points=forecast_pts,
+                current_stock=stock_val,
+                safety_stock=safety_val,
+                reorder_point=rop_val,
+                lead_time_days=lt_val,
+                reorder_quantity=ro_qty,
+            )
+            result["inventoryProjections"] = inv_calc["projections"]
+            result["daysOfSupply"] = inv_calc["daysOfSupply"]
+            result["estimatedStockoutDay"] = inv_calc["stockoutDay"]
+            result["estimatedStockoutDate"] = inv_calc["stockoutDate"]
+            result["reorderRequired"] = inv_calc["reorderRequired"]
+            stockout_day = inv_calc["stockoutDay"]
+            stockout_date = inv_calc["stockoutDate"]
+            days_of_supply = inv_calc["daysOfSupply"]
+            reorder_req = inv_calc["reorderRequired"]
+
+        # 5. Alerts and Recommendations
+        alerts, recommendations = _generate_forecast_alerts_and_recommendations(
+            historical_data=request.historicalData,
+            forecast_points=forecast_pts,
+            current_stock=stock_val,
+            safety_stock=safety_val,
+            reorder_point=rop_val,
+            lead_time_days=lt_val,
+            reorder_quantity=ro_qty,
+            stockout_day=stockout_day,
+            stockout_date=stockout_date,
+            days_of_supply=days_of_supply,
+        )
+        result["alerts"] = alerts
+        result["recommendations"] = recommendations
 
         result["productId"] = request.productId
         result["product_id"] = request.productId
@@ -513,16 +806,74 @@ async def generate_demand_forecast_route(request: DemandForecastRequest):
             detail=str(exc),
         ) from exc
 
+    except HTTPException:
+        raise
+
     except Exception as exc:
         logger.exception("Forecast computation failed.")
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
-                "Forecasting computation failed. Check the historical dates, "
+                "Forecast computation failed. Check the historical dates, "
                 "demand values, and Prophet installation."
             ),
         ) from exc
+
+
+@router.get(
+    "/forecast/plan/{sku}",
+    response_model=DemandForecastResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generate complete multi-horizon forecast and inventory plan for a SKU",
+)
+async def get_forecast_plan_route(
+    sku: str,
+    horizon: int = 30,
+    lead_time: int = 7,
+    db: Session = Depends(get_db),
+):
+    """Retrieve history, inventory levels, and compute multi-horizon forecast and replenishment projections."""
+    clean_sku = sku.strip().upper()
+    if horizon not in (30, 60, 90, 180):
+        if horizon < 1 or horizon > 365:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Horizon must be between 1 and 365 days (typically 30, 60, or 90).",
+            )
+
+    # 1. Fetch verified historical observations
+    history_resp = get_demand_history_route(sku=clean_sku, limit=180, db=db)
+    historical_points = history_resp.get("historicalData", [])
+    if len(historical_points) < 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"SKU '{clean_sku}' has fewer than 5 historical demand observations; insufficient for time-series forecasting.",
+        )
+
+    # 2. Look up inventory catalog item
+    items = get_inventory_items_route(db=db)
+    matched_item = next((it for it in items if it["sku"].upper() == clean_sku), None)
+
+    current_stock = matched_item["currentStock"] if matched_item else 100.0
+    safety_stock = matched_item["safetyStock"] if matched_item else 50.0
+    reorder_level = matched_item["reorderLevel"] if matched_item else 75.0
+    reorder_qty = matched_item["reorderQuantity"] if matched_item else 100.0
+    lead_days = matched_item["leadTimeDays"] if matched_item else lead_time
+
+    req = DemandForecastRequest(
+        productId=clean_sku,
+        historicalData=historical_points,
+        horizonDays=horizon,
+        intervalWidth=0.95,
+        evaluate=True,
+        currentStock=float(current_stock),
+        safetyStock=float(safety_stock),
+        reorderPoint=float(reorder_level),
+        leadTimeDays=lead_days,
+        reorderQuantity=float(reorder_qty),
+    )
+    return await generate_demand_forecast_route(req)
 
 
 @router.post(

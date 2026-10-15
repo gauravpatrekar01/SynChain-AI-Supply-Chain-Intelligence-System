@@ -426,3 +426,110 @@ def test_17_inventory_reorder_policy_with_current_stock():
     assert data_b["reorderRequired"] is False
     assert data_b["recommendedReorderQuantity"] == 0.0
 
+
+def test_18_multi_horizon_selection_30_60_90():
+    """18. Test that 30-day, 60-day, and 90-day horizon selections produce exact forecast point lengths and valid date boundaries."""
+    for horizon in (30, 60, 90):
+        payload = {
+            "productId": f"SKU-HORIZON-{horizon}",
+            "historicalData": SAMPLE_HISTORICAL_DATA,
+            "horizonDays": horizon,
+            "intervalWidth": 0.95,
+            "evaluate": True,
+        }
+        resp = client.post("/api/v1/forecast/demand", json=payload)
+        assert resp.status_code == 200, f"Failed for horizon {horizon}: {resp.text}"
+        data = resp.json()
+
+        assert data["horizon"] == horizon
+        assert len(data["forecast"]) == horizon
+        assert data["granularity"] == "Daily"
+        assert "startDate" in data and data["startDate"] == data["forecast"][0]["date"]
+        assert "endDate" in data and data["endDate"] == data["forecast"][-1]["date"]
+
+
+def test_19_forecast_inventory_projection_trajectory():
+    """19. Test daily multi-horizon inventory depletion, buffer status, and stockout detection."""
+    payload = {
+        "productId": "SKU-INV-TRAJECTORY",
+        "historicalData": SAMPLE_HISTORICAL_DATA,
+        "horizonDays": 30,
+        "currentStock": 350.0,
+        "safetyStock": 100.0,
+        "reorderPoint": 200.0,
+        "leadTimeDays": 5,
+        "reorderQuantity": 300.0,
+    }
+    resp = client.post("/api/v1/forecast/demand", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "inventoryProjections" in data
+    assert len(data["inventoryProjections"]) == 30
+    first_day = data["inventoryProjections"][0]
+    assert "projectedStock" in first_day
+    assert "safetyStockFloor" in first_day
+    assert first_day["safetyStockFloor"] == 100.0
+    assert "reorderTriggerPoint" in first_day
+    assert first_day["reorderTriggerPoint"] == 200.0
+    assert "status" in first_day
+    assert data["daysOfSupply"] is not None
+    assert data["daysOfSupply"] > 0.0
+
+
+def test_20_comparative_baseline_model():
+    """20. Test that baseline forecasting runs and harmonizes historical baseline values."""
+    payload = {
+        "productId": "SKU-BASELINE-TEST",
+        "historicalData": SAMPLE_HISTORICAL_DATA,
+        "horizonDays": 30,
+    }
+    resp = client.post("/api/v1/forecast/demand", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "baselineForecast" in data
+    assert len(data["baselineForecast"]) == 30
+    first_pt = data["forecast"][0]
+    assert "historicalBaseline" in first_pt
+    assert first_pt["historicalBaseline"] is not None
+
+
+def test_21_forecast_alerts_and_recommendations():
+    """21. Test explainable alerts and recommendations generation."""
+    payload = {
+        "productId": "SKU-ALERTS-TEST",
+        "historicalData": SAMPLE_HISTORICAL_DATA,
+        "horizonDays": 30,
+        "currentStock": 50.0,  # Low stock below safety floor
+        "safetyStock": 120.0,
+        "reorderPoint": 200.0,
+        "leadTimeDays": 14,
+        "reorderQuantity": 250.0,
+    }
+    resp = client.post("/api/v1/forecast/demand", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "alerts" in data
+    assert len(data["alerts"]) >= 1
+    assert "recommendations" in data
+    assert len(data["recommendations"]) >= 1
+    rec = data["recommendations"][0]
+    assert "action" in rec
+    assert "rationale" in rec
+
+
+def test_22_get_forecast_plan_endpoint():
+    """22. Test GET /api/v1/forecast/plan/{sku} multi-horizon route."""
+    resp = client.get("/api/v1/forecast/plan/P0001?horizon=60")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["productId"] == "P0001"
+    assert data["horizon"] == 60
+    assert len(data["forecast"]) == 60
+    assert "inventoryProjections" in data
+    assert len(data["inventoryProjections"]) == 60
+
+

@@ -500,6 +500,10 @@ export interface DemandForecastPoint {
   confidenceUpper: number;
   historicalBaseline: number;
   trend?: number;
+  projectedStock?: number;
+  safetyStockFloor?: number;
+  reorderTriggerPoint?: number;
+  replenishmentUnits?: number;
 }
 
 export interface ForecastMetricsData {
@@ -512,12 +516,46 @@ export interface ForecastMetricsData {
   evaluation_split?: string | null;
 }
 
+export interface InventoryProjectionPoint {
+  day: number;
+  date: string;
+  demand: number;
+  projectedStock: number;
+  safetyStockFloor: number;
+  reorderTriggerPoint: number;
+  replenishmentUnits: number;
+  status: 'optimal' | 'warning' | 'critical' | 'stockout';
+}
+
+export interface ForecastAlertItem {
+  id: string;
+  type: string;
+  severity: 'low' | 'medium' | 'warning' | 'high' | 'critical';
+  title: string;
+  description: string;
+  metric?: string;
+}
+
+export interface ForecastRecommendationItem {
+  id: string;
+  category: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  action: string;
+  rationale: string;
+}
+
 export interface DemandForecastRequestPayload {
   productId?: string;
   historicalData: Array<{ date: string; demand: number }>;
   horizonDays: number;
   intervalWidth?: number;
   evaluate?: boolean;
+  algorithm?: 'prophet' | 'baseline' | 'both';
+  currentStock?: number;
+  safetyStock?: number;
+  reorderPoint?: number;
+  leadTimeDays?: number;
+  reorderQuantity?: number;
 }
 
 export interface DemandForecastResponsePayload {
@@ -526,7 +564,20 @@ export interface DemandForecastResponsePayload {
   algorithm: string;
   modelVersion: string;
   horizon: number;
+  startDate?: string;
+  endDate?: string;
+  granularity?: string;
+  dataFreshnessTimestamp?: string;
   metrics?: ForecastMetricsData;
+  baselineForecast?: DemandForecastPoint[];
+  baselineMetrics?: ForecastMetricsData;
+  inventoryProjections?: InventoryProjectionPoint[];
+  daysOfSupply?: number | null;
+  estimatedStockoutDay?: number | null;
+  estimatedStockoutDate?: string | null;
+  reorderRequired?: boolean | null;
+  alerts?: ForecastAlertItem[];
+  recommendations?: ForecastRecommendationItem[];
   forecast: DemandForecastPoint[];
   historical: DemandForecastPoint[];
   all_points?: DemandForecastPoint[];

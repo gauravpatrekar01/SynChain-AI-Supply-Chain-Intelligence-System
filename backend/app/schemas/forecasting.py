@@ -49,6 +49,45 @@ class DemandForecastRequest(BaseModel):
         True,
         description="Whether to perform out-of-sample holdout backtest evaluation"
     )
+    algorithm: Optional[str] = Field(
+        "prophet",
+        description="Forecasting model to execute: 'prophet', 'baseline', or 'both'"
+    )
+    currentStock: Optional[float] = Field(
+        None,
+        validation_alias=AliasChoices("currentStock", "current_stock"),
+        serialization_alias="currentStock",
+        description="Current on-hand stock for inventory projection"
+    )
+    current_stock: Optional[float] = None
+    safetyStock: Optional[float] = Field(
+        None,
+        validation_alias=AliasChoices("safetyStock", "safety_stock"),
+        serialization_alias="safetyStock",
+        description="Safety stock threshold floor"
+    )
+    safety_stock: Optional[float] = None
+    reorderPoint: Optional[float] = Field(
+        None,
+        validation_alias=AliasChoices("reorderPoint", "reorder_point"),
+        serialization_alias="reorderPoint",
+        description="Reorder point threshold"
+    )
+    reorder_point: Optional[float] = None
+    leadTimeDays: Optional[int] = Field(
+        7,
+        validation_alias=AliasChoices("leadTimeDays", "lead_time_days"),
+        serialization_alias="leadTimeDays",
+        description="Supplier lead time in days"
+    )
+    lead_time_days: Optional[int] = None
+    reorderQuantity: Optional[float] = Field(
+        None,
+        validation_alias=AliasChoices("reorderQuantity", "reorder_quantity"),
+        serialization_alias="reorderQuantity",
+        description="Standard reorder batch quantity"
+    )
+    reorder_quantity: Optional[float] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -61,6 +100,10 @@ class ForecastPoint(BaseModel):
     confidenceUpper: float
     actualDemandUnits: Optional[float] = None
     historicalBaseline: Optional[float] = None
+    projectedStock: Optional[float] = None
+    safetyStockFloor: Optional[float] = None
+    reorderTriggerPoint: Optional[float] = None
+    replenishmentUnits: Optional[float] = None
     predicted_demand: Optional[float] = None
     confidence_lower: Optional[float] = None
     confidence_upper: Optional[float] = None
@@ -91,7 +134,30 @@ class DemandForecastResponse(BaseModel):
     modelVersion: str = Field(..., validation_alias=AliasChoices("modelVersion", "model_version"), serialization_alias="modelVersion")
     model_version: Optional[str] = None
     horizon: int
+    startDate: Optional[str] = Field(None, validation_alias=AliasChoices("startDate", "start_date"), serialization_alias="startDate")
+    start_date: Optional[str] = None
+    endDate: Optional[str] = Field(None, validation_alias=AliasChoices("endDate", "end_date"), serialization_alias="endDate")
+    end_date: Optional[str] = None
+    granularity: str = "Daily"
+    dataFreshnessTimestamp: Optional[str] = Field(None, validation_alias=AliasChoices("dataFreshnessTimestamp", "data_freshness_timestamp"), serialization_alias="dataFreshnessTimestamp")
+    data_freshness_timestamp: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
+    baselineForecast: Optional[List[Dict[str, Any]]] = Field(None, validation_alias=AliasChoices("baselineForecast", "baseline_forecast"), serialization_alias="baselineForecast")
+    baseline_forecast: Optional[List[Dict[str, Any]]] = None
+    baselineMetrics: Optional[Dict[str, Any]] = Field(None, validation_alias=AliasChoices("baselineMetrics", "baseline_metrics"), serialization_alias="baselineMetrics")
+    baseline_metrics: Optional[Dict[str, Any]] = None
+    inventoryProjections: Optional[List[Dict[str, Any]]] = Field(None, validation_alias=AliasChoices("inventoryProjections", "inventory_projections"), serialization_alias="inventoryProjections")
+    inventory_projections: Optional[List[Dict[str, Any]]] = None
+    daysOfSupply: Optional[float] = Field(None, validation_alias=AliasChoices("daysOfSupply", "days_of_supply"), serialization_alias="daysOfSupply")
+    days_of_supply: Optional[float] = None
+    estimatedStockoutDay: Optional[int] = Field(None, validation_alias=AliasChoices("estimatedStockoutDay", "estimated_stockout_day"), serialization_alias="estimatedStockoutDay")
+    estimated_stockout_day: Optional[int] = None
+    estimatedStockoutDate: Optional[str] = Field(None, validation_alias=AliasChoices("estimatedStockoutDate", "estimated_stockout_date"), serialization_alias="estimatedStockoutDate")
+    estimated_stockout_date: Optional[str] = None
+    reorderRequired: Optional[bool] = Field(None, validation_alias=AliasChoices("reorderRequired", "reorder_required"), serialization_alias="reorderRequired")
+    reorder_required: Optional[bool] = None
+    alerts: List[Dict[str, Any]] = Field(default_factory=list)
+    recommendations: List[Dict[str, Any]] = Field(default_factory=list)
     forecast: List[Dict[str, Any]]
     historical: List[Dict[str, Any]] = Field(default_factory=list)
     all_points: Optional[List[Dict[str, Any]]] = None
@@ -110,6 +176,23 @@ class DemandForecastResponse(BaseModel):
             mv = data.get("modelVersion", data.get("model_version"))
             data["modelVersion"] = mv
             data["model_version"] = mv
+            # Synchronize dates and metadata
+            for c, s in [
+                ("startDate", "start_date"),
+                ("endDate", "end_date"),
+                ("dataFreshnessTimestamp", "data_freshness_timestamp"),
+                ("baselineForecast", "baseline_forecast"),
+                ("baselineMetrics", "baseline_metrics"),
+                ("inventoryProjections", "inventory_projections"),
+                ("daysOfSupply", "days_of_supply"),
+                ("estimatedStockoutDay", "estimated_stockout_day"),
+                ("estimatedStockoutDate", "estimated_stockout_date"),
+                ("reorderRequired", "reorder_required"),
+            ]:
+                v = data.get(c, data.get(s))
+                if v is not None:
+                    data[c] = v
+                    data[s] = v
         return data
 
 
