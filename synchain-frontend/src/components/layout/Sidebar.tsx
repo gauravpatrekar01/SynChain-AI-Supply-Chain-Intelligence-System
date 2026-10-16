@@ -18,6 +18,7 @@ import {
   UploadCloud,
   BarChart3,
   Activity,
+  FileCheck,
 } from 'lucide-react';
 import { soundFX } from '../../services/audioService';
 import { useSupplyChain } from '../../context/SupplyChainContext';
@@ -64,6 +65,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       title: 'Disruption & Decision',
       items: [
         { id: 'scenario-builder', label: 'Scenario Builder', icon: Cpu },
+        { id: 'simulation-results', label: 'Simulation Evidence', icon: FileCheck, badge: 'AI Report', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
         { id: 'decision-simulator', label: 'Decision Simulator', icon: Zap },
         { id: 'recommendations', label: 'AI Recommendations', icon: Sparkles, badge: '3 Ready', badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-400/40' },
       ],

@@ -20,6 +20,7 @@ import {
   MitigationStrategy,
   DashboardOverviewData,
 } from '../types';
+import type { ScenarioSimulationResponse } from '../types/scenario';
 import {
   mockKPIMetrics,
   mockIncidentAlerts,
@@ -92,6 +93,8 @@ export interface SupplyChainContextType {
   runSimulation: (input: ScenarioInput) => Promise<void>;
   resetSimulation: () => void;
   resetState: () => void;
+  scenarioIntelligenceResult: ScenarioSimulationResponse | null;
+  setScenarioIntelligenceResult: React.Dispatch<React.SetStateAction<ScenarioSimulationResponse | null>>;
 
   // Strategy Execution
   deployedStrategies: string[];
@@ -339,6 +342,7 @@ export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [simulationProgress, setSimulationProgress] = useState<number>(100);
   const [simulationPhaseText, setSimulationPhaseText] = useState<string>('Simulation complete. Optimal mitigation ready.');
   const [activeResult, setActiveResult] = useState<SimulationResultMetrics | null>(mockDefaultSimulationResult);
+  const [scenarioIntelligenceResult, setScenarioIntelligenceResult] = useState<ScenarioSimulationResponse | null>(null);
 
   // Deployed strategies
   const [deployedStrategies, setDeployedStrategies] = useState<string[]>([]);
@@ -505,6 +509,8 @@ export const SupplyChainProvider: React.FC<{ children: React.ReactNode }> = ({ c
         deployedStrategies,
         deployStrategy,
         executeMitigationStrategy,
+        scenarioIntelligenceResult,
+        setScenarioIntelligenceResult,
         isNotificationDrawerOpen,
         setIsNotificationDrawerOpen,
         isCommandPaletteOpen,

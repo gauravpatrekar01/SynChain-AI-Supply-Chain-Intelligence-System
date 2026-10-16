@@ -1,5 +1,12 @@
 import axios from 'axios';
 import type { AIReport, CopilotHistoryMessage, CopilotResponse, ReportFocus } from '../types/ai';
+import type {
+  DataReadinessCheck,
+  ScenarioConfigOptionsResponse,
+  ScenarioSimulationRequest,
+  ScenarioSimulationResponse,
+  SimulationEvidenceReportSummary,
+} from '../types/scenario';
 import {
   KPIMetric,
   AIHealthScore,
@@ -1001,6 +1008,48 @@ export const apiService = {
     const res = await apiClient.patch(`/analysis/recommendations/${encodeURIComponent(recId)}`, {
       status,
       notes,
+    });
+    return res.data;
+  },
+
+  // --- Scenario Intelligence & AI Evidence Reports ---
+
+  async getScenarioReadiness(): Promise<DataReadinessCheck> {
+    const res = await apiClient.get('/scenario/readiness');
+    return res.data;
+  },
+
+  async getScenarioConfigOptions(): Promise<ScenarioConfigOptionsResponse> {
+    const res = await apiClient.get('/scenario/config-options');
+    return res.data;
+  },
+
+  async runScenarioSimulation(payload: ScenarioSimulationRequest): Promise<ScenarioSimulationResponse> {
+    const res = await apiClient.post('/scenario/simulate', payload);
+    return res.data;
+  },
+
+  async getScenarioReports(limit: number = 50): Promise<SimulationEvidenceReportSummary[]> {
+    const res = await apiClient.get('/scenario/reports', { params: { limit } });
+    return res.data;
+  },
+
+  async getScenarioReport(reportId: string): Promise<ScenarioSimulationResponse> {
+    const res = await apiClient.get(`/scenario/reports/${encodeURIComponent(reportId)}`);
+    return res.data;
+  },
+
+  async downloadScenarioReportPdf(reportId: string): Promise<Blob> {
+    const res = await apiClient.get(`/scenario/reports/${encodeURIComponent(reportId)}/pdf`, {
+      responseType: 'blob',
+    });
+    return res.data;
+  },
+
+  async downloadScenarioReportExport(reportId: string, format: 'csv' | 'json' = 'csv'): Promise<Blob> {
+    const res = await apiClient.get(`/scenario/reports/${encodeURIComponent(reportId)}/export`, {
+      params: { format },
+      responseType: 'blob',
     });
     return res.data;
   },

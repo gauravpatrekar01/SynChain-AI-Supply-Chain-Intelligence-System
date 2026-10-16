@@ -328,3 +328,24 @@ class Shipment(Base):
 
     supplier = relationship("Supplier", foreign_keys=[supplier_id], lazy="joined")
 
+
+class SimulationEvidenceReport(Base):
+    __tablename__ = "simulation_evidence_reports"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    report_id = Column(String(100), unique=True, nullable=False, index=True)
+    scenario_id = Column(UUID(as_uuid=True), ForeignKey("scenarios.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    scenario_name = Column(String(255), nullable=False)
+    objective = Column(String(100), nullable=False, default="balanced")
+    scenario_config = Column(JSONB, nullable=False)
+    baseline_results = Column(JSONB, nullable=False)
+    disrupted_results = Column(JSONB, nullable=False)
+    mitigation_strategies = Column(JSONB, nullable=False)
+    recommended_strategy = Column(JSONB, nullable=False)
+    affected_entities = Column(JSONB, nullable=False)
+    data_provenance = Column(JSONB, nullable=False)
+    ai_narrative = Column(JSONB, nullable=False)
+    calculation_transparency = Column(JSONB, nullable=False)
+    model_metadata = Column(JSONB, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
