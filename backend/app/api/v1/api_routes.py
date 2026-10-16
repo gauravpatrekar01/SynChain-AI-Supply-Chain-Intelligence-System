@@ -9,7 +9,8 @@ from app.services.forecasting.prophet_forecast import ForecastingService
 from app.services.risk_prediction.xgb_predictor import RiskPredictionService
 from app.services.graph.neo4j_service import Neo4jGraphService
 from app.services.simulation.simulator import SimulationService
-from app.services.copilot.ai_service import AICopilotService
+from app.api.v1.copilot import router as copilot_router
+from app.api.v1.ai_reports import router as ai_reports_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.integrations import router as integrations_router
 from app.api.v1.ingestion import router as ingestion_router
@@ -39,14 +40,14 @@ router.include_router(simulation_router)
 router.include_router(shipments_router)
 router.include_router(suppliers_router)
 router.include_router(analysis_router)
-router.include_router(sales_router)
+router.include_router(copilot_router)
+router.include_router(ai_reports_router)
 
 # Initialize services
 forecast_service = ForecastingService()
 risk_service = RiskPredictionService()
 graph_service = Neo4jGraphService()
 sim_service = SimulationService()
-copilot_service = AICopilotService()
 
 # --- Pydantic Models for Requests ---
 
@@ -65,10 +66,6 @@ class SimulationRequest(BaseModel):
     includeSecondTierCascade: bool = True
     autoMitigate: bool = True
 
-
-class CopilotRequest(BaseModel):
-    message: str
-    context: Dict[str, Any]
 
 # --- Routes ---
 
@@ -200,21 +197,3 @@ async def get_simulation_history():
         })
         _recent_simulations.append(default_run)
     return _recent_simulations
-
-
-@router.post("/copilot/chat")
-async def chat_with_copilot(request: CopilotRequest):
-    try:
-        response_text = copilot_service.generate_response(
-            user_message=request.message,
-            context=request.context
-        )
-        return {
-            "id": f"msg-{uuid.uuid4().hex[:8]}",
-            "text": response_text,
-            "sender": "ai",
-            "timestamp": "2026-08-22 19:30:00 UTC",
-            "actionRequired": False
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
