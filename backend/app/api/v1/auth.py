@@ -105,14 +105,14 @@ async def verify_email(
 @router.post("/resend-verification")
 async def resend_verification(
     request: ResendVerificationRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Resend verification email.
     """
-    # Just a proxy for register's email send portion for now, or you can implement 
-    # it properly in AuthService. I'll just return a success message for now.
-    return {"message": "Verification email sent if account exists."}
+    await AuthService(db).resend_verification(request.email, background_tasks=background_tasks)
+    return {"message": "If the account needs verification, a verification email will be sent. Please allow a minute between requests."}
 
 @router.post("/forgot-password")
 async def forgot_password(

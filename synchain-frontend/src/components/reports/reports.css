@@ -1,0 +1,40 @@
+@media print {
+  body:has(.synchain-report-document) * {
+    visibility: hidden;
+  }
+
+  body:has(.synchain-report-document),
+  body:has(.synchain-report-document) *:has(.synchain-report-document) {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    transform: none !important;
+  }
+
+  .synchain-report-document,
+  .synchain-report-document * {
+    visibility: visible !important;
+    color: #172033 !important;
+    background: white !important;
+    border-color: #d5dae3 !important;
+    box-shadow: none !important;
+  }
+
+  .synchain-report-document {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    padding: 0;
+    border: 0;
+  }
+
+  .synchain-report-document h4,
+  .synchain-report-document h5 {
+    break-after: avoid;
+  }
+
+  .synchain-report-document tr,
+  .synchain-report-document li {
+    break-inside: avoid;
+  }
+}

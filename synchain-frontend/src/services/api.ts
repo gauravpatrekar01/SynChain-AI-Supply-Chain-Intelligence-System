@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { AIReport, CopilotHistoryMessage, CopilotResponse, ReportFocus } from '../types/ai';
 import {
   KPIMetric,
   AIHealthScore,
@@ -217,6 +218,40 @@ apiClient.interceptors.response.use(
 );
 
 export const apiService = {
+  async chatWithCopilot(
+    message: string,
+    history: CopilotHistoryMessage[],
+    context: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<CopilotResponse> {
+    const res = await apiClient.post<CopilotResponse>('/copilot/chat', { message, history, context }, {
+      timeout: 90000,
+      signal,
+    });
+    return res.data;
+  },
+
+  async getAIInsights(
+    focusOrSignal?: ReportFocus | AbortSignal,
+    signal?: AbortSignal,
+  ): Promise<AIReport> {
+    const focus = typeof focusOrSignal === 'string' ? focusOrSignal : 'overview';
+    const activeSignal = focusOrSignal instanceof AbortSignal ? focusOrSignal : signal;
+    const res = await apiClient.get<AIReport>('/ai/insights', {
+      params: { focus },
+      signal: activeSignal,
+    });
+    return res.data;
+  },
+
+  async generateAIReport(focus: ReportFocus, signal?: AbortSignal): Promise<AIReport> {
+    const res = await apiClient.post<AIReport>('/ai/reports/generate', { focus }, {
+      timeout: 90000,
+      signal,
+    });
+    return res.data;
+  },
+
   // Authentication
   async register(data: any): Promise<UserProfile> {
     const payload = {

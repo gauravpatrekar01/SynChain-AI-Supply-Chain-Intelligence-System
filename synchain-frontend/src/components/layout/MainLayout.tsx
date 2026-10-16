@@ -21,6 +21,7 @@ import { SettingsView } from '../settings/SettingsView';
 import { DataIngestionView } from '../ingestion/DataIngestionView';
 import { SupplyChainIntelligenceView } from '../intelligence/SupplyChainIntelligenceView';
 import { AnalysisView } from '../analysis/AnalysisView';
+import { CopilotPanel } from '../copilot/CopilotPanel';
 
 const PAGE_IDS = [
   'dashboard',
@@ -128,6 +129,7 @@ export const MainLayout: React.FC = () => {
 
       {/* Command Palette (Ctrl+K) */}
       <CommandPalette onNavigate={navigateToPage} />
+      <CopilotPanel currentPage={currentPage} />
     </div>
   );
 };

@@ -13,6 +13,12 @@ from app.core.security import (
 )
 from app.services.email_service import send_verification_email, send_password_reset_email
 
+
+def _as_utc(value: datetime) -> datetime:
+    """Postgres returns aware timestamps; SQLite test stores may return naive UTC."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 class AuthService:
     def __init__(self, db: Session):
         self.db = db
@@ -77,6 +83,38 @@ class AuthService:
 
         return db_user
 
+    async def resend_verification(self, email: str, background_tasks=None) -> None:
+        """Queue a real verification email without revealing whether an account exists.
+
+        A row lock and a one-minute cooldown prevent concurrent resend requests
+        from creating a burst of messages. Existing links remain valid if SMTP
+        rejects the new message.
+        """
+        user = self.db.query(User).filter(User.email == email.strip().lower()).with_for_update().first()
+        if not user or user.is_verified or not user.is_active:
+            return
+        now = datetime.now(timezone.utc)
+        latest = self.db.query(EmailVerificationToken).filter(
+            EmailVerificationToken.user_id == user.id,
+        ).order_by(EmailVerificationToken.created_at.desc()).first()
+        if latest and latest.created_at and _as_utc(latest.created_at) > now - timedelta(minutes=1):
+            return
+        raw_token = generate_secure_token()
+        try:
+            self.db.add(EmailVerificationToken(
+                user_id=user.id,
+                token_hash=hash_token(raw_token),
+                expires_at=now + timedelta(hours=24),
+            ))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise HTTPException(status_code=503, detail="Unable to process verification request.")
+        if background_tasks is not None:
+            background_tasks.add_task(send_verification_email, user.email, raw_token)
+        else:
+            await send_verification_email(user.email, raw_token)
+
     def authenticate_user(self, email: str, password: str) -> User:
         clean_email = email.strip().lower()
         user = self.db.query(User).filter(User.email == clean_email).first()
@@ -106,9 +144,7 @@ class AuthService:
         if not db_token:
             raise HTTPException(status_code=400, detail="Invalid verification token")
         
-        # In SQLite/Postgres naive datetimes vs timezone datetimes comparison can be tricky, 
-        # so ensure tz info is handled if necessary.
-        if db_token.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+        if _as_utc(db_token.expires_at) <= datetime.now(timezone.utc):
             raise HTTPException(status_code=400, detail="Verification token has expired")
 
         user = self.db.query(User).filter(User.id == db_token.user_id).first()
@@ -150,7 +186,7 @@ class AuthService:
         if not db_token:
             raise HTTPException(status_code=400, detail="Invalid reset token")
 
-        if db_token.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+        if _as_utc(db_token.expires_at) <= datetime.now(timezone.utc):
             raise HTTPException(status_code=400, detail="Reset token has expired")
 
         user = self.db.query(User).filter(User.id == db_token.user_id).first()

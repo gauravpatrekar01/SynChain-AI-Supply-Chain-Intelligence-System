@@ -25,6 +25,9 @@
 
 ## Overview
 
+Gemini Copilot, evidence-based reports and transactional email setup:
+[configuration and verification guide](docs/gemini-and-email.md).
+
 **SynChain AI** is an AI-powered **Supply Chain Risk Intelligence and Digital Twin platform** designed to help organizations identify, predict, simulate, and mitigate supply chain risks.
 
 The system combines:
