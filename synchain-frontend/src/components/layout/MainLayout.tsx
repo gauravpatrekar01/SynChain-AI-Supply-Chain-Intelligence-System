@@ -21,6 +21,8 @@ import { SettingsView } from '../settings/SettingsView';
 import { DataIngestionView } from '../ingestion/DataIngestionView';
 import { SupplyChainIntelligenceView } from '../intelligence/SupplyChainIntelligenceView';
 import { AnalysisView } from '../analysis/AnalysisView';
+import { ForecastView } from '../forecast/ForecastView';
+import { SalesForecastingView } from '../sales/SalesForecastingView';
 import { CopilotPanel } from '../copilot/CopilotPanel';
 
 const PAGE_IDS = [
@@ -32,6 +34,7 @@ const PAGE_IDS = [
   'simulation-results',
   'recommendations',
   'forecast',
+  'sales-forecasting',
   'risk',
   'suppliers',
   'inventory',
@@ -71,6 +74,10 @@ export const MainLayout: React.FC = () => {
         return <RecommendationsView />;
       case 'decision-simulator':
         return <DecisionSimulatorView />;
+      case 'forecast':
+        return <ForecastView />;
+      case 'sales-forecasting':
+        return <SalesForecastingView />;
       case 'risk':
         return <RiskMatrixView onNavigate={navigateToPage} />;
       case 'suppliers':

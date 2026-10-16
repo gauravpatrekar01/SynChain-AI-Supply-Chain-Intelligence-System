@@ -19,6 +19,7 @@ import {
   BarChart3,
   Activity,
   FileCheck,
+  DollarSign,
 } from 'lucide-react';
 import { soundFX } from '../../services/audioService';
 import { useSupplyChain } from '../../context/SupplyChainContext';
@@ -74,6 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       title: 'Predictive Intelligence',
       items: [
         { id: 'forecast', label: 'Forecast Engine', icon: TrendingUp },
+        { id: 'sales-forecasting', label: 'Sales Forecasting', icon: DollarSign, badge: 'New', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
         { id: 'risk', label: '5x5 Risk Matrix', icon: ShieldAlert, badge: unreadAlertsCount > 0 ? `${unreadAlertsCount}` : undefined, badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-400/40' },
         { id: 'suppliers', label: 'Supplier Registry', icon: Building2 },
         { id: 'inventory', label: 'Inventory Buffer', icon: Package },

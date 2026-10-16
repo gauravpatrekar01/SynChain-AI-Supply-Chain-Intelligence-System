@@ -24,6 +24,7 @@ from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.inventory import router as inventory_router
 from app.api.v1.analysis import router as analysis_router
 from app.api.v1.scenario_intelligence import router as scenario_intelligence_router
+from app.api.v1.sales import router as sales_router
 from app.schemas.forecasting import DemandForecastRequest, DemandForecastResponse
 
 router = APIRouter()
@@ -38,6 +39,7 @@ router.include_router(inventory_router)
 router.include_router(forecast_router)
 router.include_router(simulation_router)
 router.include_router(scenario_intelligence_router)
+router.include_router(sales_router)
 router.include_router(shipments_router)
 router.include_router(suppliers_router)
 router.include_router(analysis_router)

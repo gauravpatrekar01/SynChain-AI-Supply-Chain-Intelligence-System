@@ -349,3 +349,32 @@ class SimulationEvidenceReport(Base):
     model_metadata = Column(JSONB, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
+
+class SalesTransaction(Base):
+    """
+    Dedicated sales transaction records for sales revenue and demand forecasting.
+    Includes explicit unit selling prices, discounts, returns, taxes, and net revenue.
+    """
+    __tablename__ = "sales_transactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transaction_id = Column(String(100), unique=True, nullable=False, index=True)
+    transaction_date = Column(DateTime(timezone=True), nullable=False, index=True)
+    product_id = Column(String(100), nullable=False, index=True)
+    product_name = Column(String(255), nullable=False)
+    product_category = Column(String(255), nullable=False, index=True)
+    quantity_sold = Column(Integer, nullable=False)
+    unit_selling_price = Column(Numeric(12, 2), nullable=False)
+    discount_amount = Column(Numeric(12, 2), nullable=False, default=0.0)
+    gross_revenue = Column(Numeric(15, 2), nullable=False)
+    net_revenue = Column(Numeric(15, 2), nullable=False)
+    region = Column(String(100), nullable=False, index=True)
+    customer_id = Column(String(100), nullable=True, index=True)
+    order_id = Column(String(100), nullable=True, index=True)
+    tax_amount = Column(Numeric(12, 2), nullable=False, default=0.0)
+    return_quantity = Column(Integer, nullable=False, default=0)
+    currency = Column(String(10), nullable=False, default="USD")
+    import_id = Column(UUID(as_uuid=True), ForeignKey("data_imports.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
