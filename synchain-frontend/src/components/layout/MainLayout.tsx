@@ -21,6 +21,9 @@ import { SettingsView } from '../settings/SettingsView';
 import { DataIngestionView } from '../ingestion/DataIngestionView';
 import { SupplyChainIntelligenceView } from '../intelligence/SupplyChainIntelligenceView';
 import { AnalysisView } from '../analysis/AnalysisView';
+import { ForecastView } from '../forecast/ForecastView';
+import { SalesForecastingView } from '../sales/SalesForecastingView';
+import { PageErrorBoundary } from '../common/PageErrorBoundary';
 import { CopilotPanel } from '../copilot/CopilotPanel';
 
 const PAGE_IDS = [
@@ -123,7 +126,9 @@ export const MainLayout: React.FC = () => {
               transition={{ duration: 0.25, ease: 'easeOut' }}
               className="max-w-7xl mx-auto"
             >
-              {renderCurrentPage()}
+              <PageErrorBoundary pageName={currentPage} onNavigateHome={() => navigateToPage('dashboard')}>
+                {renderCurrentPage()}
+              </PageErrorBoundary>
             </motion.div>
           </AnimatePresence>
         </main>

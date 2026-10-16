@@ -194,7 +194,7 @@ const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'http://loca
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 20000,
+  timeout: 45000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -221,7 +221,7 @@ apiClient.interceptors.response.use(
         window.dispatchEvent(new CustomEvent('synchain_auth_expired'));
       }
     } else if (error.code === 'ECONNABORTED' || !error.response) {
-      console.error('Transient network error or timeout occurred. Maintaining session.');
+      console.warn(`Transient network error or timeout on ${error.config?.url || 'request'}. Maintaining session.`);
     } else {
       console.error(`API Error: ${error.response?.status || 'Unknown'} - ${error.message}`);
     }

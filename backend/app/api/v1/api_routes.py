@@ -40,6 +40,7 @@ router.include_router(simulation_router)
 router.include_router(shipments_router)
 router.include_router(suppliers_router)
 router.include_router(analysis_router)
+router.include_router(sales_router)
 router.include_router(copilot_router)
 router.include_router(ai_reports_router)
 
