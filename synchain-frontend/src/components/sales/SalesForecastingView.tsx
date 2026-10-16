@@ -90,6 +90,12 @@ export const SalesForecastingView: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
+  // Reliable State Management for Forecast Card
+  type ForecastCardState = 'idle' | 'loading' | 'success' | 'insufficient_data' | 'error';
+  const [forecastState, setForecastState] = useState<ForecastCardState>('idle');
+  const [forecastErrorMsg, setForecastErrorMsg] = useState<string | null>(null);
+  const forecastRequestIdRef = React.useRef(0);
+
   // ---------------------------------------------------------------------------
   // Data Fetching
   // ---------------------------------------------------------------------------
@@ -116,15 +122,31 @@ export const SalesForecastingView: React.FC = () => {
   };
 
   const fetchForecast = async (horizon: number = forecastHorizon, prodId?: string) => {
+    const reqId = ++forecastRequestIdRef.current;
+    setForecastState('loading');
+    setForecastErrorMsg(null);
     try {
       const res = await apiService.getRevenueForecast({
         horizon_days: horizon,
         product_id: prodId || (forecastProductFilter || undefined),
         category: selectedCategory !== 'All' ? selectedCategory : undefined,
       });
-      setForecastData(res);
+
+      // Avoid race conditions: only update if this is the newest pending request
+      if (reqId === forecastRequestIdRef.current) {
+        setForecastData(res);
+        if (!res.has_data || !res.has_sufficient_history) {
+          setForecastState('insufficient_data');
+        } else {
+          setForecastState('success');
+        }
+      }
     } catch (err: any) {
-      setErrorMessage(formatApiError(err, 'Failed to generate revenue forecast.'));
+      if (reqId === forecastRequestIdRef.current) {
+        setForecastState('error');
+        const formattedErr = formatApiError(err, 'Failed to generate revenue forecast.');
+        setForecastErrorMsg(formattedErr);
+      }
     }
   };
 
@@ -189,6 +211,7 @@ export const SalesForecastingView: React.FC = () => {
 
   useEffect(() => {
     fetchOverviewAndHistorical();
+    fetchForecast(30);
   }, [selectedYear, selectedCategory, selectedRegion]);
 
   useEffect(() => {
@@ -202,6 +225,12 @@ export const SalesForecastingView: React.FC = () => {
       fetchTransactions(txPage, txSearch);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'forecasting') {
+      fetchForecast(forecastHorizon, forecastProductFilter);
+    }
+  }, [forecastHorizon, forecastProductFilter]);
 
   // Download Sample CSV Helper
   const handleDownloadSampleCSV = () => {
@@ -740,12 +769,38 @@ export const SalesForecastingView: React.FC = () => {
                 <span className="text-xs">Forecasted 30d Rev</span>
                 <Sparkles className="w-4 h-4 text-purple-400" />
               </div>
-              <p className="text-xl lg:text-2xl font-bold text-purple-300">
-                {forecastData?.total_forecasted_revenue
-                  ? `$${forecastData.total_forecasted_revenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}`
-                  : 'Computing...'}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1">Next 30-day run rate</p>
+              {forecastState === 'loading' ? (
+                <div className="flex items-center gap-2 py-1">
+                  <RefreshCw className="w-4 h-4 text-purple-400 animate-spin" />
+                  <span className="text-sm font-medium text-purple-300">Computing...</span>
+                </div>
+              ) : forecastState === 'error' ? (
+                <div>
+                  <p className="text-sm font-semibold text-rose-400">Forecast unavailable</p>
+                  <button
+                    onClick={() => fetchForecast(30)}
+                    className="text-[11px] text-cyan-400 hover:underline mt-1 flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Retry
+                  </button>
+                </div>
+              ) : forecastState === 'insufficient_data' ? (
+                <div>
+                  <p className="text-sm font-semibold text-amber-400">Insufficient sales history</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    {forecastData?.explanation || 'Minimum 5 transaction dates required'}
+                  </p>
+                </div>
+              ) : forecastData?.total_forecasted_revenue !== undefined ? (
+                <>
+                  <p className="text-xl lg:text-2xl font-bold text-purple-300">
+                    ${forecastData.total_forecasted_revenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1">Next 30-day run rate</p>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">No forecast data</p>
+              )}
             </div>
 
             {/* 6. Forecast Accuracy */}
@@ -755,8 +810,12 @@ export const SalesForecastingView: React.FC = () => {
                 <ShieldAlert className="w-4 h-4 text-teal-400" />
               </div>
               <p className="text-xl lg:text-2xl font-bold text-teal-300">
-                {forecastData?.metrics?.accuracy_pct !== null && forecastData?.metrics?.accuracy_pct !== undefined
+                {forecastState === 'loading'
+                  ? 'Evaluating...'
+                  : forecastData?.metrics?.accuracy_pct !== null && forecastData?.metrics?.accuracy_pct !== undefined
                   ? `${forecastData.metrics.accuracy_pct}%`
+                  : forecastState === 'insufficient_data'
+                  ? 'N/A'
                   : '80/20 Holdout'}
               </p>
               <p className="text-[11px] text-slate-400 mt-1">
