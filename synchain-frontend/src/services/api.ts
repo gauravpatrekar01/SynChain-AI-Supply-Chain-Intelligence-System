@@ -72,6 +72,18 @@ import {
   AnalysisRecommendationsListResponse,
 } from '../types/analysis';
 import {
+  SalesTransaction,
+  SalesTransactionListResponse,
+  SalesUploadPreviewResponse,
+  SalesImportSummaryResponse,
+  SalesOverviewKPIs,
+  HistoricalSalesAnalysisResponse,
+  RevenueForecastResponse,
+  SalesScenarioRequest,
+  SalesScenarioResponse,
+  SalesSupplyChainIntegrationResponse,
+} from '../types/sales';
+import {
   mockAIHealth,
   mockKPIMetrics,
   mockIncidentAlerts,
@@ -967,6 +979,92 @@ export const apiService = {
       status,
       notes,
     });
+    return res.data;
+  },
+
+  // --- Sales Forecasting Module ---
+  async uploadSalesPreview(file: File): Promise<SalesUploadPreviewResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await apiClient.post('/sales/upload-preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+
+  async executeSalesImport(payload: { import_id: string; skip_duplicates?: boolean }): Promise<SalesImportSummaryResponse> {
+    const res = await apiClient.post('/sales/import', payload);
+    return res.data;
+  },
+
+  async getSalesTransactions(params?: {
+    page?: number;
+    page_size?: number;
+    search?: string;
+    product_id?: string;
+    category?: string;
+    region?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<SalesTransactionListResponse> {
+    const res = await apiClient.get('/sales/transactions', { params });
+    return res.data;
+  },
+
+  async getSalesTransaction(txId: string): Promise<SalesTransaction> {
+    const res = await apiClient.get(`/sales/transactions/${encodeURIComponent(txId)}`);
+    return res.data;
+  },
+
+  async updateSalesTransaction(txId: string, payload: Partial<SalesTransaction>): Promise<SalesTransaction> {
+    const res = await apiClient.put(`/sales/transactions/${encodeURIComponent(txId)}`, payload);
+    return res.data;
+  },
+
+  async deleteSalesTransaction(txId: string): Promise<{ success: boolean; message: string; deleted_id: string }> {
+    const res = await apiClient.delete(`/sales/transactions/${encodeURIComponent(txId)}`);
+    return res.data;
+  },
+
+  async getSalesOverview(params?: {
+    year?: number;
+    start_date?: string;
+    end_date?: string;
+    category?: string;
+    region?: string;
+  }): Promise<SalesOverviewKPIs> {
+    const res = await apiClient.get('/sales/overview', { params });
+    return res.data;
+  },
+
+  async getHistoricalSalesAnalysis(params?: {
+    year?: number;
+    start_date?: string;
+    end_date?: string;
+    category?: string;
+    region?: string;
+  }): Promise<HistoricalSalesAnalysisResponse> {
+    const res = await apiClient.get('/sales/historical', { params });
+    return res.data;
+  },
+
+  async getRevenueForecast(params?: {
+    horizon_days?: number;
+    product_id?: string;
+    category?: string;
+    evaluate?: boolean;
+  }): Promise<RevenueForecastResponse> {
+    const res = await apiClient.get('/sales/forecast', { params });
+    return res.data;
+  },
+
+  async simulateSalesScenario(payload: SalesScenarioRequest): Promise<SalesScenarioResponse> {
+    const res = await apiClient.post('/sales/simulate-scenario', payload);
+    return res.data;
+  },
+
+  async getSalesSupplyChainIntegration(): Promise<SalesSupplyChainIntegrationResponse> {
+    const res = await apiClient.get('/sales/supply-chain-integration');
     return res.data;
   },
 };

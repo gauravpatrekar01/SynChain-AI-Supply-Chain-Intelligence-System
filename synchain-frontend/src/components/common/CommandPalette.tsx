@@ -15,6 +15,7 @@ import {
   Settings,
   Truck,
   ArrowRight,
+  DollarSign,
 } from 'lucide-react';
 import { useSupplyChain } from '../../context/SupplyChainContext';
 import { soundFX } from '../../services/audioService';
@@ -80,6 +81,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ onNavigate }) =>
         category: 'Navigation',
         icon: <TrendingUp className="w-4 h-4 text-amber-400" />,
         onSelect: () => onNavigate('forecast'),
+      },
+      {
+        id: 'nav-sales-forecast',
+        title: 'Sales Forecasting & Revenue Intelligence',
+        category: 'Navigation',
+        icon: <DollarSign className="w-4 h-4 text-emerald-400" />,
+        onSelect: () => onNavigate('sales-forecasting'),
       },
       {
         id: 'nav-risk',
