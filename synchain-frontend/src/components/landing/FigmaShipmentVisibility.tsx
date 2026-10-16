@@ -5,6 +5,10 @@ import {
   Clock, Package, AlertTriangle, CheckCircle2, ChevronRight 
 } from 'lucide-react';
 
+import oceanPortImg from '../../assets/images/ocean_port.jpg';
+import airCargoImg from '../../assets/images/air_cargo.jpg';
+import groundTruckImg from '../../assets/images/ground_truck.jpg';
+
 export const FigmaShipmentVisibility: React.FC = () => {
   const shipments = [
     {
@@ -13,7 +17,7 @@ export const FigmaShipmentVisibility: React.FC = () => {
       modeIcon: <Anchor className="w-3.5 h-3.5" />,
       origin: 'SHANGHAI',
       destination: 'Rotterdam',
-      image: '/images/ocean_port.jpg',
+      image: oceanPortImg,
       status: 'Arrival at risk',
       statusColor: 'amber',
       progress: 62,
@@ -26,7 +30,7 @@ export const FigmaShipmentVisibility: React.FC = () => {
       modeIcon: <Plane className="w-3.5 h-3.5" />,
       origin: 'SINGAPORE',
       destination: 'Frankfurt',
-      image: '/images/air_cargo.jpg',
+      image: airCargoImg,
       status: 'On schedule',
       statusColor: 'emerald',
       progress: 40,
@@ -39,7 +43,7 @@ export const FigmaShipmentVisibility: React.FC = () => {
       modeIcon: <Truck className="w-3.5 h-3.5" />,
       origin: 'MONTERREY',
       destination: 'Austin',
-      image: '/images/ground_truck.jpg',
+      image: groundTruckImg,
       status: 'In transit',
       statusColor: 'cyan',
       progress: 25,
