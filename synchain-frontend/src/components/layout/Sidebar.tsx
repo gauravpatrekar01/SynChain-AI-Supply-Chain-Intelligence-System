@@ -14,7 +14,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Zap,
   UploadCloud,
   BarChart3,
   Activity,
@@ -58,7 +57,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       items: [
         { id: 'dashboard', label: 'AI Command Center', icon: LayoutDashboard },
         { id: 'analysis', label: 'Supply Chain Analysis', icon: BarChart3, badge: 'Live', badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40' },
-        // { id: 'digital-twin', label: 'Digital Twin Graph', icon: Network, badge: 'Live' },
         { id: 'geomap', label: 'Fleet & Geo Logistics', icon: Globe2 },
       ],
     },
@@ -67,7 +65,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
       items: [
         { id: 'scenario-builder', label: 'Scenario Builder', icon: Cpu },
         { id: 'simulation-results', label: 'Simulation Evidence', icon: FileCheck, badge: 'AI Report', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
-        { id: 'decision-simulator', label: 'Decision Simulator', icon: Zap },
         { id: 'recommendations', label: 'AI Recommendations', icon: Sparkles, badge: '3 Ready', badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-400/40' },
       ],
     },
