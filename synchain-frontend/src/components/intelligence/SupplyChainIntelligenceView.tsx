@@ -30,7 +30,7 @@ const DATASET_CONFIG: Record<DatasetKey, DatasetConfig> = {
     accent: 'from-emerald-500/25 to-teal-500/15 border-emerald-400/30',
   },
   csr: {
-    title: 'CSR CSV',
+    title: 'CRM CSV',
     description: 'Supplier compliance and emissions data used to assess sustainability and audit-related exposure.',
     accent: 'from-violet-500/25 to-fuchsia-500/15 border-violet-400/30',
   },
@@ -400,13 +400,12 @@ export const SupplyChainIntelligenceView: React.FC = () => {
                   <div key={risk.id} className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <h4 className="text-base font-semibold text-white">{risk.title}</h4>
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                        risk.severity === 'high'
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${risk.severity === 'high'
                           ? 'border-rose-500/40 bg-rose-500/10 text-rose-200'
                           : risk.severity === 'medium'
                             ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
                             : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-                      }`}>
+                        }`}>
                         {risk.severity}</span>
                     </div>
 
