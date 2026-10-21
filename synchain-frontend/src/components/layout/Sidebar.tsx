@@ -55,28 +55,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
     {
       title: 'Command & Twin',
       items: [
-        { id: 'dashboard', label: 'AI Command Center', icon: LayoutDashboard },
+        { id: 'dashboard', label: 'Main Dashboard', icon: LayoutDashboard },
         { id: 'analysis', label: 'Supply Chain Analysis', icon: BarChart3, badge: 'Live', badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-400/40' },
-        { id: 'geomap', label: 'Fleet & Geo Logistics', icon: Globe2 },
+        { id: 'geomap', label: 'Transport and Logistics', icon: Globe2 },
       ],
     },
     {
       title: 'Disruption & Decision',
       items: [
         { id: 'scenario-builder', label: 'Scenario Builder', icon: Cpu },
-        { id: 'simulation-results', label: 'Simulation Evidence', icon: FileCheck, badge: 'AI Report', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
-        { id: 'recommendations', label: 'AI Recommendations', icon: Sparkles, badge: '3 Ready', badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-400/40' },
+        { id: 'simulation-results', label: 'Simulation Reports', icon: FileCheck, badge: 'AI Report', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
+        { id: 'recommendations', label: 'Recommended Actions', icon: Sparkles, badge: '3 Ready', badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-400/40' },
       ],
     },
     {
       title: 'Predictive Intelligence',
       items: [
-        { id: 'forecast', label: 'Forecast Engine', icon: TrendingUp },
-        { id: 'sales-forecasting', label: 'Sales Forecasting', icon: DollarSign, badge: 'New', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
-        { id: 'risk', label: '5x5 Risk Matrix', icon: ShieldAlert, badge: unreadAlertsCount > 0 ? `${unreadAlertsCount}` : undefined, badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-400/40' },
-        { id: 'suppliers', label: 'Supplier Registry', icon: Building2 },
-        { id: 'inventory', label: 'Inventory Buffer', icon: Package },
-        { id: 'shipments', label: 'Live Shipments', icon: Truck },
+        { id: 'forecast', label: 'Demand Forecasting', icon: TrendingUp },
+        { id: 'sales-forecasting', label: 'Sales & Revenue Forecast', icon: DollarSign, badge: 'New', badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' },
+        { id: 'risk', label: 'Supply Chain Risk Matrix', icon: ShieldAlert, badge: unreadAlertsCount > 0 ? `${unreadAlertsCount}` : undefined, badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-400/40' },
+        { id: 'suppliers', label: 'Suppliers', icon: Building2 },
+        { id: 'inventory', label: 'Inventory and Safety Stock', icon: Package },
+        { id: 'shipments', label: 'Shipments', icon: Truck },
       ],
     },
     {
@@ -193,8 +193,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate }) => 
               {isRealDataConnected ? 'PostgreSQL Live' : 'Connecting...'}
             </span>
           </div>
-          <div className="flex items-center justify-between text-slate-400">
-            <span>Digital Twin</span>
+          <div className="flex items-center justify-between text-slate-400" title="A digital representation of supply chain operations used to test possible scenarios.">
+            <span>Digital Model</span>
             <span className="text-cyan-400 font-semibold">{digitalTwinNodes.length} Nodes Synced</span>
           </div>
         </div>

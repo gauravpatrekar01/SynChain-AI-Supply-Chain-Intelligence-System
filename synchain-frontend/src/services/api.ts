@@ -6,6 +6,7 @@ import type {
   ScenarioSimulationRequest,
   ScenarioSimulationResponse,
   SimulationEvidenceReportSummary,
+  ProductRecommendationSummary,
 } from '../types/scenario';
 import {
   KPIMetric,
@@ -916,7 +917,14 @@ export const apiService = {
       entity_type?: string;
     }
   ): Promise<IngestionExecuteResponse> {
-    const res = await apiClient.post(`/ingestion/${importId}/import`, payload);
+    const res = await apiClient.post(`/ingestion/${importId}/import`, payload, {
+      timeout: 120000,
+    });
+    return res.data;
+  },
+
+  async cancelIngestion(importId: string): Promise<{ success: boolean; message: string }> {
+    const res = await apiClient.delete(`/ingestion/${importId}`);
     return res.data;
   },
 
@@ -1033,6 +1041,13 @@ export const apiService = {
 
   async getScenarioConfigOptions(): Promise<ScenarioConfigOptionsResponse> {
     const res = await apiClient.get('/scenario/config-options');
+    return res.data;
+  },
+
+  async getProductRecommendations(sku: string): Promise<ProductRecommendationSummary> {
+    const res = await apiClient.get('/scenario/product-recommendations', {
+      params: { sku },
+    });
     return res.data;
   },
 

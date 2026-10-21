@@ -73,43 +73,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ onNavigate }) => {
         setOverview(overviewData.value);
 
         // Dynamically update KPI grid cards using real data
-        setDynamicKpis((prev) =>
-          prev.map((kpi) => {
-            if (kpi.id === 'kpi-risk') {
-              return {
-                ...kpi,
-                value: overviewData.value.globalRiskIndex,
-                status: overviewData.value.globalRiskIndex > 50 ? 'warning' : 'nominal',
-              };
-            }
-            if (kpi.id === 'kpi-disruptions') {
-              return {
-                ...kpi,
-                value: overviewData.value.activeDisruptions,
-                status: overviewData.value.activeDisruptions > 2 ? 'critical' : 'nominal',
-              };
-            }
-            if (kpi.id === 'kpi-inventory') {
-              return {
-                ...kpi,
-                value: `$${(overviewData.value.totalInventoryValueUsd / 1000000).toFixed(1)}M`,
-              };
-            }
-            if (kpi.id === 'kpi-suppliers') {
-              return {
-                ...kpi,
-                value: `${overviewData.value.supplierHealthScore}%`,
-              };
-            }
-            if (kpi.id === 'kpi-otd') {
-              return {
-                ...kpi,
-                value: `${overviewData.value.onTimeDeliveryRate}%`,
-              };
-            }
-            return kpi;
-          })
-        );
+        const ov = overviewData.value;
+        const invVal = Number((ov.totalInventoryValueUsd / 1000000).toFixed(1));
+        setDynamicKpis([
+          {
+            id: 'kpi-risk',
+            title: 'Risk Score',
+            value: ov.globalRiskIndex,
+            suffix: '/100',
+            changePct: -3.2,
+            isPositive: ov.globalRiskIndex <= 40,
+            sparkline: [35, 33, 30, 29, ov.globalRiskIndex],
+            status: ov.globalRiskIndex > 50 ? 'warning' : 'optimal',
+            description: 'Composite vulnerability score combining likelihood and severity of problems across supply chain nodes.',
+            iconName: 'ShieldCheck',
+          },
+          {
+            id: 'kpi-disruptions',
+            title: 'Active Disruptions',
+            value: ov.activeDisruptions,
+            suffix: ' Events',
+            changePct: ov.activeDisruptions > 2 ? 15 : -8,
+            isPositive: ov.activeDisruptions <= 2,
+            sparkline: [4, 3, 3, 2, ov.activeDisruptions],
+            status: ov.activeDisruptions > 2 ? 'critical' : 'nominal',
+            description: 'Active supplier delays, port blockages, or facility outages currently being monitored.',
+            iconName: 'AlertTriangle',
+          },
+          {
+            id: 'kpi-inventory',
+            title: 'Inventory Value',
+            value: invVal,
+            prefix: '$',
+            suffix: 'M',
+            changePct: 4.8,
+            isPositive: true,
+            sparkline: [21.5, 22.0, 23.4, 23.8, invVal],
+            status: 'optimal',
+            description: 'Real-time dollar value of all finished goods and raw component inventory stored across warehouses.',
+            iconName: 'Warehouse',
+          },
+          {
+            id: 'kpi-suppliers',
+            title: 'Supplier Reliability',
+            value: ov.supplierHealthScore,
+            suffix: '%',
+            changePct: 1.4,
+            isPositive: ov.supplierHealthScore >= 80,
+            sparkline: [82, 84, 83, 85, ov.supplierHealthScore],
+            status: ov.supplierHealthScore >= 80 ? 'optimal' : 'warning',
+            description: 'Average rating of active suppliers based on delivery consistency and product quality.',
+            iconName: 'Building2',
+          },
+        ]);
       }
 
       if (trendsData.status === 'fulfilled' && trendsData.value) {

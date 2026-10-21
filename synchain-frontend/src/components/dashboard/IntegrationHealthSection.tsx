@@ -270,15 +270,15 @@ export const IntegrationHealthSection: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-bold text-slate-100 tracking-tight">API Integration Health Monitor</h2>
+              <h2 className="text-lg font-bold text-slate-100 tracking-tight">Connected Services Status</h2>
               {healthData && (
-                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700/60 font-mono">
+                <span className="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700/60 font-mono">
                   {healthData.healthy_count}/{healthData.total_count} Healthy
                 </span>
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Latest connectivity checks, response latency, and reported data freshness across external services
+            <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+              Checks whether external services are working correctly, including response speed and data freshness.
             </p>
           </div>
         </div>
@@ -363,14 +363,14 @@ export const IntegrationHealthSection: React.FC = () => {
                   {/* Latency & Freshness Metric */}
                   <div className="mt-4 pt-3 border-t border-slate-800/60 grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Latency</span>
-                      <span className={`font-mono font-medium ${latencyColor}`}>
+                      <span className="text-xs text-slate-400 font-medium block">Response Time</span>
+                      <span className={`font-mono font-semibold ${latencyColor}`}>
                         {item.response_time_ms > 0 ? `${Math.round(item.response_time_ms)} ms` : '—'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-[11px] text-slate-400 uppercase tracking-wider block">Data Freshness</span>
-                      <span className="font-medium text-slate-300 truncate block">
+                      <span className="text-xs text-slate-400 font-medium block">Data Freshness</span>
+                      <span className="font-medium text-slate-200 truncate block">
                         {item.data_freshness || 'Not reported'}
                       </span>
                     </div>

@@ -16,6 +16,7 @@ import { MitigationStrategy } from '../../types';
 import { Button } from '../common/Button';
 import { NeonBadge } from '../common/NeonBadge';
 import { Modal } from '../common/Modal';
+import { Tooltip } from '../common/Tooltip';
 import { soundFX } from '../../services/audioService';
 
 export const RecommendationsView: React.FC = () => {
@@ -138,17 +139,26 @@ export const RecommendationsView: React.FC = () => {
       {/* Metric Cards Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="p-5 rounded-2xl glass-panel border border-purple-500/30 space-y-1">
-          <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Total Value at Risk Saved</span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider">Total Value at Risk Saved</span>
+            <Tooltip content="Estimated financial losses prevented across disruption mitigation actions by rerouting, expedite, and dual-sourcing." />
+          </div>
           <p className="text-2xl sm:text-3xl font-bold text-emerald-400 font-mono-telemetry">$7.25M</p>
           <p className="text-[11px] text-slate-400">Across 4 optimized AI mitigation playbooks</p>
         </div>
         <div className="p-5 rounded-2xl glass-panel border border-blue-500/30 space-y-1">
-          <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Average Activation SLA</span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Average Activation SLA</span>
+            <Tooltip content="Service Level Agreement (SLA): Maximum guaranteed turnaround window from strategy approval to ERP order transmission." />
+          </div>
           <p className="text-2xl sm:text-3xl font-bold text-white font-mono-telemetry">&lt; 24.5 Hours</p>
-          <p className="text-[11px] text-slate-400">Fast ERP webhook integration</p>
+          <p className="text-[11px] text-slate-400">Automated ERP integration turnaround</p>
         </div>
         <div className="p-5 rounded-2xl glass-panel border border-cyan-500/30 space-y-1">
-          <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Assembly Buffer Gain</span>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Assembly Buffer Gain</span>
+            <Tooltip content="Total additional operating days of safety inventory secured across factory assembly lines through these recommendations." />
+          </div>
           <p className="text-2xl sm:text-3xl font-bold text-cyan-300 font-mono-telemetry">+34 Days</p>
           <p className="text-[11px] text-slate-400">Restores zero-downtime safety stock</p>
         </div>

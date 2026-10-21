@@ -24,7 +24,7 @@ export const DemandForecastChart: React.FC<DemandForecastChartProps> = ({ data }
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
       borderColor: 'rgba(59, 130, 246, 0.4)',
       borderWidth: 1,
-      textStyle: { color: '#f8fafc', fontSize: 12 },
+      textStyle: { color: '#f8fafc', fontSize: 13 },
       formatter: (params: any) => {
         let result = `<div class="font-bold text-white mb-1">${params[0].name}</div>`;
         params.forEach((item: any) => {
@@ -39,8 +39,8 @@ export const DemandForecastChart: React.FC<DemandForecastChartProps> = ({ data }
       },
     },
     legend: {
-      data: ['Actual Orders', 'AI Transformer Forecast', 'Historical Baseline', '95% Confidence Upper Band'],
-      textStyle: { color: '#94a3b8', fontSize: 11 },
+      data: ['Actual Customer Orders', 'AI Expected Demand', 'Reference Baseline', 'Upper Forecast Range (95%)'],
+      textStyle: { color: '#94a3b8', fontSize: 12 },
       top: 0,
       right: 10,
       icon: 'roundRect',
@@ -56,7 +56,7 @@ export const DemandForecastChart: React.FC<DemandForecastChartProps> = ({ data }
       type: 'category',
       data: dates,
       axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } },
-      axisLabel: { color: '#94a3b8', fontSize: 11 },
+      axisLabel: { color: '#94a3b8', fontSize: 12 },
     },
     yAxis: {
       type: 'value',
@@ -64,20 +64,20 @@ export const DemandForecastChart: React.FC<DemandForecastChartProps> = ({ data }
       splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)', type: 'dashed' } },
       axisLabel: {
         color: '#94a3b8',
-        fontSize: 11,
-        formatter: (val: number) => `${(val / 1000).toFixed(0)}k`,
+        fontSize: 12,
+        formatter: (val: number) => `${(val / 1000).toFixed(0)}k units`,
       },
     },
     series: [
       {
-        name: 'Historical Baseline',
+        name: 'Reference Baseline',
         type: 'line',
         data: baselines,
         lineStyle: { color: 'rgba(148, 163, 184, 0.4)', type: 'dotted', width: 2 },
         symbol: 'none',
       },
       {
-        name: 'Actual Orders',
+        name: 'Actual Customer Orders',
         type: 'line',
         data: actuals,
         smooth: true,
@@ -93,7 +93,7 @@ export const DemandForecastChart: React.FC<DemandForecastChartProps> = ({ data }
         },
       },
       {
-        name: 'AI Transformer Forecast',
+        name: 'AI Expected Demand',
         type: 'line',
         data: predicted,
         smooth: true,
@@ -115,7 +115,7 @@ export const DemandForecastChart: React.FC<DemandForecastChartProps> = ({ data }
         },
       },
       {
-        name: '95% Confidence Upper Band',
+        name: 'Upper Forecast Range (95%)',
         type: 'line',
         data: upperBounds,
         smooth: true,
@@ -127,12 +127,12 @@ export const DemandForecastChart: React.FC<DemandForecastChartProps> = ({ data }
 
   return (
     <GlassCard
-      title="Global Demand Forecast & AI Prediction (ARIMA + Transformer)"
-      subtitle="180-day forecast projection across all production product lines"
+      title="Demand Forecasting & Order Trends"
+      subtitle="180-day forecast projection across production lines. Estimates are statistical projections, not guaranteed outcomes."
       badge={
         <div className="flex items-center gap-1.5 text-xs text-purple-300 bg-purple-500/15 border border-purple-400/30 px-2.5 py-0.5 rounded-full">
           <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-          <span>98.4% Confidence Model</span>
+          <span>95% Confidence Bounds</span>
         </div>
       }
       headerAction={

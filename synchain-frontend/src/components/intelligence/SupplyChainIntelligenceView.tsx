@@ -20,18 +20,18 @@ interface DatasetConfig {
 
 const DATASET_CONFIG: Record<DatasetKey, DatasetConfig> = {
   erp: {
-    title: 'ERP CSV',
+    title: 'ERP Data (Suppliers & Lead Times)',
     description: 'Supplier, order, procurement, and lead-time data used to assess upstream fulfillment risk.',
     accent: 'from-cyan-500/25 to-blue-500/15 border-cyan-400/30',
   },
   wms: {
-    title: 'WMS CSV',
+    title: 'WMS Data (Warehouses & Stock Levels)',
     description: 'Inventory, warehouse, stock, and replenishment data used to check coverage and safety stock adequacy.',
     accent: 'from-emerald-500/25 to-teal-500/15 border-emerald-400/30',
   },
   csr: {
-    title: 'CRM CSV',
-    description: 'Supplier compliance and emissions data used to assess sustainability and audit-related exposure.',
+    title: 'CRM & Compliance Data',
+    description: 'Supplier compliance, customer records, and ESG audit data used to evaluate operational exposure.',
     accent: 'from-violet-500/25 to-fuchsia-500/15 border-violet-400/30',
   },
 };
@@ -229,7 +229,7 @@ export const SupplyChainIntelligenceView: React.FC = () => {
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">Supply Chain Intelligence</p>
           <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Supply Chain Intelligence</h2>
           <p className="mt-2 max-w-2xl text-sm text-slate-300">
-            Upload ERP, WMS, and CSR datasets to surface explainable risks, mitigation recommendations, and missing-data gaps in your operational network.
+            Upload supplier (ERP), inventory (WMS), and customer/compliance records to surface clear risks, recommended actions, and data gaps.
           </p>
         </div>
 

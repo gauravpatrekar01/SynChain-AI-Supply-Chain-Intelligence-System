@@ -171,6 +171,7 @@ def get_sales_overview_kpis(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     category: Optional[str] = Query(None, description="Filter by category"),
     region: Optional[str] = Query(None, description="Filter by region"),
+    product_id: Optional[str] = Query(None, description="Filter by product ID or SKU"),
     db: Session = Depends(get_db),
 ):
     return SalesAnalyticsService.get_overview_kpis(
@@ -180,6 +181,7 @@ def get_sales_overview_kpis(
         end_date=end_date,
         category=category,
         region=region,
+        product_id=product_id,
     )
 
 
@@ -195,6 +197,7 @@ def get_historical_sales_analysis(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     category: Optional[str] = Query(None, description="Filter by category"),
     region: Optional[str] = Query(None, description="Filter by region"),
+    product_id: Optional[str] = Query(None, description="Filter by product ID or SKU"),
     db: Session = Depends(get_db),
 ):
     return SalesAnalyticsService.get_historical_analysis(
@@ -204,6 +207,7 @@ def get_historical_sales_analysis(
         end_date=end_date,
         category=category,
         region=region,
+        product_id=product_id,
     )
 
 

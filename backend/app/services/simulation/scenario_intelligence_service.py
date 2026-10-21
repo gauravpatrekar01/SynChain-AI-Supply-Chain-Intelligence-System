@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.models.postgres.models import (
     Product,
@@ -33,11 +33,16 @@ from app.models.postgres.models import (
     Inventory,
     Shipment,
     SimulationEvidenceReport,
+    DataImport,
+    ImportedRecord,
+    EnterpriseIntegration,
 )
 from app.schemas.scenario_intelligence import (
     DataReadinessCheck,
     ScenarioConfigOption,
     ScenarioConfigOptionsResponse,
+    ProductStrategyEligibility,
+    ProductRecommendationSummary,
     ScenarioSimulationRequest,
     DailyTrajectoryPoint,
     MitigationStrategyResult,
@@ -158,29 +163,60 @@ class ScenarioIntelligenceService:
     # -----------------------------------------------------------------------
     # 2. Dynamic Configuration Options
     # -----------------------------------------------------------------------
+    # -----------------------------------------------------------------------
+    # 2. Dynamic Configuration Options
+    # -----------------------------------------------------------------------
     @classmethod
     def get_config_options(cls, db: Session) -> ScenarioConfigOptionsResponse:
-        """Loads verified products, suppliers, and warehouses from PostgreSQL."""
+        """Loads verified products, suppliers, warehouses, organizations, and route details from PostgreSQL."""
+        organizations_opts: List[Dict[str, Any]] = [
+            {
+                "id": "all",
+                "name": "Global Enterprise (All Operating Units)",
+                "type": "global",
+                "description": "Unified enterprise-wide supply chain view across all operating divisions and imported datasets",
+                "product_count": 0,
+            }
+        ]
         products_opts: List[ScenarioConfigOption] = []
         suppliers_opts: List[ScenarioConfigOption] = []
         warehouses_opts: List[ScenarioConfigOption] = []
 
         try:
-            # Products
-            db_products = db.query(Product).order_by(Product.name).limit(100).all()
-            for p in db_products:
-                p_price = getattr(p, "price", None) or getattr(p, "unit_price", None)
-                products_opts.append(
-                    ScenarioConfigOption(
-                        value=p.sku or str(p.id),
-                        label=f"{p.name} ({p.sku or 'SKU'})",
-                        category=p.category,
-                        unit_cost_usd=float(p_price) if p_price else DEFAULT_UNIT_COST,
-                    )
-                )
+            # 1. Discover Organizations from Business Unit Categories
+            db_categories = db.query(Product.category).distinct().all()
+            for (cat,) in db_categories:
+                if cat:
+                    cat_clean = str(cat).strip()
+                    org_id = f"bu_{cat_clean.lower().replace(' ', '_')}"
+                    cat_count = db.query(Product).filter(Product.category == cat).count()
+                    organizations_opts.append({
+                        "id": org_id,
+                        "name": f"{cat_clean} Division",
+                        "type": "business_unit",
+                        "category": cat_clean,
+                        "description": f"Operating business unit managing {cat_clean} hardware components and fulfillment routes.",
+                        "product_count": cat_count,
+                    })
 
-            # Suppliers
-            db_suppliers = db.query(Supplier).order_by(Supplier.name).limit(100).all()
+            completed_imports = []
+            # Check for WMS Data Ingestion records
+            try:
+                completed_imports = db.query(DataImport).filter(DataImport.status == "completed").order_by(DataImport.created_at.desc()).limit(5).all()
+                for imp in completed_imports:
+                    organizations_opts.append({
+                        "id": f"wms_{imp.id}",
+                        "name": f"WMS Operations ({imp.filename})",
+                        "type": "wms_dataset",
+                        "import_id": str(imp.id),
+                        "description": f"Live warehouse management dataset ingested from {imp.filename} ({imp.rows_processed} records).",
+                        "product_count": imp.rows_processed,
+                    })
+            except Exception:
+                pass
+
+            # 2. Load Suppliers first for lookup
+            db_suppliers = db.query(Supplier).order_by(Supplier.updated_at.desc(), Supplier.name).limit(100).all()
             for s in db_suppliers:
                 suppliers_opts.append(
                     ScenarioConfigOption(
@@ -193,8 +229,8 @@ class ScenarioIntelligenceService:
                     )
                 )
 
-            # Warehouses
-            db_warehouses = db.query(Warehouse).order_by(Warehouse.name).limit(100).all()
+            # 3. Load Warehouses
+            db_warehouses = db.query(Warehouse).order_by(Warehouse.updated_at.desc(), Warehouse.name).limit(100).all()
             for w in db_warehouses:
                 loc = getattr(w, "location", None) or getattr(w, "city", None) or getattr(w, "country", None) or "Facility"
                 warehouses_opts.append(
@@ -204,15 +240,169 @@ class ScenarioIntelligenceService:
                         country=w.country,
                     )
                 )
+
+            # 4. Products - prioritize recently updated / imported products and attach complete route
+            db_products = db.query(Product).order_by(Product.updated_at.desc(), Product.name).limit(100).all()
+            organizations_opts[0]["product_count"] = len(db_products)
+
+            for p in db_products:
+                p_price = getattr(p, "price", None) or getattr(p, "unit_price", None)
+                unit_cost = float(p_price) if p_price else DEFAULT_UNIT_COST
+
+                # Query live inventory record
+                inv = db.query(Inventory).filter(Inventory.product_id == p.id).first()
+                on_hand = int(inv.stock_quantity) if (inv and inv.stock_quantity is not None) else 0
+                safety = int(inv.safety_stock_level) if (inv and inv.safety_stock_level is not None) else DEFAULT_SAFETY_STOCK
+                demand = float(inv.average_daily_demand) if (inv and inv.average_daily_demand is not None) else DEFAULT_DAILY_DEMAND
+
+                # Resolve supplier
+                sup_name = None
+                sup_id = None
+                sup_country = None
+                sup_location = None
+                sup_lead_time = None
+
+                if inv and inv.supplier_id:
+                    s_rec = db.query(Supplier).filter(Supplier.id == inv.supplier_id).first()
+                    if s_rec:
+                        sup_name = s_rec.name
+                        sup_id = str(s_rec.id)
+                        sup_country = s_rec.country
+                        sup_location = s_rec.location
+                        sup_lead_time = s_rec.lead_time_days
+
+                # Query recent shipment for route info
+                shp = db.query(Shipment).filter(
+                    or_(
+                        Shipment.cargo_description.ilike(f"%{p.name}%"),
+                        Shipment.cargo_description.ilike(f"%{p.sku}%"),
+                    )
+                ).order_by(Shipment.created_at.desc()).first()
+
+                if not sup_name and shp and shp.supplier_id:
+                    s_rec = db.query(Supplier).filter(Supplier.id == shp.supplier_id).first()
+                    if s_rec:
+                        sup_name = s_rec.name
+                        sup_id = str(s_rec.id)
+                        sup_country = s_rec.country
+                        sup_location = s_rec.location
+                        sup_lead_time = s_rec.lead_time_days
+
+                if not sup_name and db_suppliers:
+                    sup_name = db_suppliers[0].name
+                    sup_id = str(db_suppliers[0].id)
+                    sup_country = db_suppliers[0].country
+                    sup_location = db_suppliers[0].location
+                    sup_lead_time = db_suppliers[0].lead_time_days
+
+                # Source Warehouse and Address
+                if inv and inv.warehouse:
+                    source_wh_name = inv.warehouse.name
+                    source_address = inv.warehouse.location or (f"{inv.warehouse.country}" if inv.warehouse.country else "Address not available")
+                elif sup_location:
+                    source_wh_name = f"{sup_name} Manufacturing Plant"
+                    source_address = sup_location
+                elif sup_country:
+                    source_wh_name = f"{sup_name} Logistics Hub"
+                    source_address = f"{sup_country}"
+                else:
+                    source_wh_name = "Primary Supplier Facility"
+                    source_address = "Address not available"
+
+                # Destination Warehouse and Address
+                if shp and shp.destination:
+                    dest_wh_name = "Destination Delivery Facility"
+                    dest_address = shp.destination
+                elif inv and inv.warehouse and inv.warehouse.location:
+                    dest_wh_name = inv.warehouse.name
+                    dest_address = inv.warehouse.location
+                else:
+                    dest_wh_name = "Regional Distribution Center"
+                    dest_address = "Address not available"
+
+                # Transport details
+                carrier_name = shp.carrier_name if shp else "DHL Express Freight"
+                transport_mode = shp.transport_mode if shp else "Air"
+                shipment_id = shp.shipment_id if shp else None
+                shipment_status = shp.status if shp else "scheduled"
+
+                org_id = f"bu_{str(p.category).strip().lower().replace(' ', '_')}" if p.category else "all"
+                org_name = f"{str(p.category).strip()} Division" if p.category else "Global Enterprise"
+
+                # Map product to imported records
+                p_import_id = None
+                try:
+                    imp_rec = db.query(ImportedRecord).filter(ImportedRecord.target_entity_id == p.id).first()
+                    if imp_rec:
+                        p_import_id = str(imp_rec.import_id)
+                except Exception:
+                    pass
+                if not p_import_id and completed_imports:
+                    p_import_id = str(completed_imports[0].id)
+
+                org_ids = ["all"]
+                if org_id != "all":
+                    org_ids.append(org_id)
+                if p_import_id:
+                    org_ids.append(f"wms_{p_import_id}")
+
+                has_alt = any(s.value != sup_id for s in suppliers_opts) if sup_id else (len(suppliers_opts) >= 2)
+
+                products_opts.append(
+                    ScenarioConfigOption(
+                        value=p.sku or str(p.id),
+                        label=f"{p.name} ({p.sku or 'SKU'})",
+                        category=p.category,
+                        unit_cost_usd=unit_cost,
+                        on_hand_inventory=on_hand,
+                        daily_demand=demand,
+                        safety_stock=safety,
+                        lead_time_days=int(sup_lead_time) if sup_lead_time else (int(inv.lead_time_days) if inv and inv.lead_time_days else 5),
+                        source_supplier_id=sup_id,
+                        source_supplier_name=sup_name,
+                        source_warehouse_name=source_wh_name,
+                        source_address=source_address,
+                        destination_warehouse_name=dest_wh_name,
+                        destination_address=dest_address,
+                        carrier_name=carrier_name,
+                        transport_mode=transport_mode,
+                        shipment_id=shipment_id,
+                        shipment_status=shipment_status,
+                        organization_id=org_id,
+                        organization_name=org_name,
+                        import_id=p_import_id,
+                        organization_ids=org_ids,
+                        has_alternative_supplier=has_alt,
+                    )
+                )
+
         except Exception as e:
             logger.warning(f"Error loading configuration options from DB: {e}")
 
         # Fallback benchmarks if DB is sparse
         if not products_opts:
             products_opts = [
-                ScenarioConfigOption(value="SYN-TEST-101", label="Semiconductor Microcontroller SYN-101", category="Electronics", unit_cost_usd=45.0),
-                ScenarioConfigOption(value="P0001", label="Lithium Battery Cell Pack P0001", category="Energy", unit_cost_usd=65.0),
-                ScenarioConfigOption(value="IC-3NM-A18", label="AI Logic Wafer IC-3NM-A18", category="Advanced Silicon", unit_cost_usd=120.0),
+                ScenarioConfigOption(
+                    value="SYN-TEST-101",
+                    label="Semiconductor Microcontroller SYN-101",
+                    category="Electronics",
+                    unit_cost_usd=45.0,
+                    on_hand_inventory=350,
+                    daily_demand=25.0,
+                    safety_stock=50,
+                    lead_time_days=5,
+                    source_supplier_name="AeroMaterials Prime",
+                    source_warehouse_name="Aero Hub North",
+                    source_address="Austin, TX, USA",
+                    destination_warehouse_name="Main Distribution Center",
+                    destination_address="Chicago, IL, USA",
+                    carrier_name="FedEx Supply Chain",
+                    transport_mode="Air",
+                    organization_id="bu_electronics",
+                    organization_name="Electronics Division",
+                    organization_ids=["all", "bu_electronics"],
+                    has_alternative_supplier=True,
+                ),
             ]
 
         if not suppliers_opts:
@@ -239,11 +429,209 @@ class ScenarioIntelligenceService:
         ]
 
         return ScenarioConfigOptionsResponse(
+            organizations=organizations_opts,
             products=products_opts,
             suppliers=suppliers_opts,
             warehouses=warehouses_opts,
             disruption_types=disruption_types,
             objectives=objectives,
+        )
+
+    # -----------------------------------------------------------------------
+    # 2b. Product Recommendation Summary & Strategy Eligibility
+    # -----------------------------------------------------------------------
+    @classmethod
+    def get_product_recommendation_summary(
+        cls,
+        db: Session,
+        sku: str,
+    ) -> ProductRecommendationSummary:
+        """
+        Dynamically analyzes live PostgreSQL records for a selected product/SKU to determine:
+        1. Eligible mitigation strategies (Switch, Split, Expedite, Accept)
+        2. Real data completeness (identifying missing fields if any)
+        3. Active explainable recommendations from the recommendation service
+        4. Next required operational action
+        """
+        sku_clean = str(sku).strip()
+        db_product = db.query(Product).filter(
+            (Product.sku == sku_clean) | (Product.name.ilike(f"%{sku_clean}%"))
+        ).first()
+
+        if not db_product:
+            return ProductRecommendationSummary(
+                sku=sku_clean,
+                product_name="Unknown Product",
+                organization_id=None,
+                organization_name=None,
+                is_data_complete=False,
+                missing_fields=["Product record not found in PostgreSQL database"],
+                eligible_strategies=[],
+                active_recommendations=[],
+                next_required_action="Select a valid product imported from WMS records or catalog.",
+            )
+
+        # Inventory record
+        inv = db.query(Inventory).filter(Inventory.product_id == db_product.id).first()
+        on_hand = int(inv.stock_quantity) if (inv and inv.stock_quantity is not None) else 0
+        safety = int(inv.safety_stock_level) if (inv and inv.safety_stock_level is not None) else DEFAULT_SAFETY_STOCK
+        demand = float(inv.average_daily_demand) if (inv and inv.average_daily_demand is not None) else DEFAULT_DAILY_DEMAND
+
+        # Primary supplier
+        primary_sup = None
+        if inv and inv.supplier_id:
+            primary_sup = db.query(Supplier).filter(Supplier.id == inv.supplier_id).first()
+        if not primary_sup:
+            shp = db.query(Shipment).filter(
+                or_(
+                    Shipment.cargo_description.ilike(f"%{db_product.name}%"),
+                    Shipment.cargo_description.ilike(f"%{db_product.sku}%"),
+                )
+            ).order_by(Shipment.created_at.desc()).first()
+            if shp and shp.supplier_id:
+                primary_sup = db.query(Supplier).filter(Supplier.id == shp.supplier_id).first()
+
+        total_suppliers = db.query(Supplier).filter(Supplier.is_active == True).count()
+        has_alt = (total_suppliers >= 2)
+        primary_sup_name = primary_sup.name if primary_sup else "Primary Supplier"
+
+        # Check missing fields
+        missing_fields: List[str] = []
+        if inv is None or inv.stock_quantity is None:
+            missing_fields.append("Inventory level (on-hand stock)")
+        if inv is None or inv.average_daily_demand is None or float(inv.average_daily_demand) <= 0:
+            missing_fields.append("Daily demand velocity")
+        p_price = getattr(db_product, "price", None) or getattr(db_product, "unit_price", None)
+        if p_price is None or float(p_price) <= 0:
+            missing_fields.append("Unit purchase price")
+        if primary_sup is None:
+            missing_fields.append("Assigned primary supplier")
+
+        # Evaluate mitigation strategy eligibility
+        strategies_eligibility: List[ProductStrategyEligibility] = [
+            ProductStrategyEligibility(
+                strategy_id="SWITCH_SUPPLIER",
+                strategy_name="Switch to Qualified Secondary Supplier",
+                is_eligible=has_alt,
+                reason=(
+                    f"Eligible: Secondary qualified supplier available in database to absorb replenishment."
+                    if has_alt
+                    else f"Ineligible: {db_product.name} has a single-source supplier dependency ({primary_sup_name}) with no secondary supplier registered."
+                ),
+                prerequisites="Requires at least 2 qualified suppliers registered in database.",
+            ),
+            ProductStrategyEligibility(
+                strategy_id="SPLIT_PROCUREMENT",
+                strategy_name="Split Procurement (Dual-Sourcing 50/50)",
+                is_eligible=has_alt,
+                reason=(
+                    f"Eligible: Dual-sourcing can partition procurement 50/50 across primary and secondary suppliers."
+                    if has_alt
+                    else f"Ineligible: Dual-sourcing requires an active secondary supplier to partition PO allocation."
+                ),
+                prerequisites="Requires secondary supplier availability.",
+            ),
+            ProductStrategyEligibility(
+                strategy_id="EXPEDITE_AIR_FREIGHT",
+                strategy_name="Expedited Air Freight & Dedicated Charter",
+                is_eligible=True,
+                reason="Eligible: Priority air freight charter can compress transit lead time by up to 60%, bypassing surface/port bottlenecks.",
+                prerequisites="Available for high-priority component rerouting.",
+            ),
+            ProductStrategyEligibility(
+                strategy_id="ACCEPT_RISK",
+                strategy_name="Accept Risk & Buffer Conservation (Demand Rationing)",
+                is_eligible=(on_hand > 0),
+                reason=(
+                    f"Eligible: Current on-hand stock ({on_hand} units) can be preserved with 80% demand rationing."
+                    if on_hand > 0
+                    else "Ineligible: On-hand inventory is 0 units; buffer rationing cannot avert immediate stockout."
+                ),
+                prerequisites="Requires existing inventory buffer > 0 units.",
+            ),
+        ]
+
+        # Gather active explainable recommendations for this product from DB
+        active_recs: List[Dict[str, Any]] = []
+        try:
+            from app.services.analysis.recommendation_service import RecommendationService
+            gen_recs = RecommendationService.generate_recommendations(db)
+            for r in gen_recs:
+                corpus = f"{r.recommendation_id} {r.related_risk_id or ''} {r.title} {r.suggested_action}".lower()
+                if (
+                    db_product.sku.lower() in corpus
+                    or db_product.name.lower() in corpus
+                    or (primary_sup and primary_sup.name.lower() in corpus)
+                ):
+                    active_recs.append({
+                        "id": r.recommendation_id,
+                        "title": r.title,
+                        "category": r.category,
+                        "action": r.suggested_action,
+                        "priority": r.priority,
+                        "benefit": r.expected_benefit,
+                        "trade_off": r.important_trade_offs,
+                    })
+        except Exception as e:
+            logger.warning(f"Error gathering analysis recommendations: {e}")
+
+        # Check inventory buffer condition
+        avail = max(0, on_hand - (inv.reserved_quantity if inv and inv.reserved_quantity else 0))
+        if safety > 0 and avail < safety:
+            deficit = safety - avail
+            if not any(ar.get("category") == "Inventory Replenishment" for ar in active_recs):
+                active_recs.insert(0, {
+                    "id": f"REC-INV-{db_product.sku}",
+                    "title": f"Trigger Emergency Replenishment for {db_product.sku}",
+                    "category": "Inventory Replenishment",
+                    "action": f"Issue replenishment order of at least {deficit} units for {db_product.name} to restore safety buffer headroom.",
+                    "priority": "CRITICAL" if avail < (safety * 0.5) else "HIGH",
+                    "benefit": "Mitigates imminent stockout risk and shields production schedule.",
+                    "trade_off": "Working capital commitment for immediate procurement.",
+                })
+
+        if primary_sup and getattr(primary_sup, "single_source_risk", False):
+            if not any(ar.get("category") == "Supplier Engagement" for ar in active_recs):
+                active_recs.append({
+                    "id": f"REC-SUP-{primary_sup.id}",
+                    "title": f"Qualify Secondary Sourcing Alternative for {primary_sup.name}",
+                    "category": "Supplier Engagement",
+                    "action": f"Initiate dual-sourcing qualification for category '{db_product.category}' to eliminate single-source dependency on {primary_sup.name}.",
+                    "priority": "HIGH",
+                    "benefit": "Eliminates single-point-of-failure risk during facility outages.",
+                    "trade_off": "Vendor onboarding and audit overhead.",
+                })
+
+        if not active_recs:
+            active_recs.append({
+                "id": f"REC-OK-{db_product.sku}",
+                "title": f"Optimal Baseline Status for {db_product.sku}",
+                "category": "Buffer Status",
+                "action": f"Current inventory ({on_hand} units) satisfies safety stock threshold ({safety} units). Ready for disruption stress-testing.",
+                "priority": "LOW",
+                "benefit": "Operational stability verified across live supply nodes.",
+                "trade_off": "None.",
+            })
+
+        # Next required action
+        if missing_fields:
+            next_action = f"Warning: {len(missing_fields)} field(s) unverified ({', '.join(missing_fields)}). System will use benchmark parameters during simulation."
+        else:
+            next_action = "Data readiness verified. Configure disruption parameters and click 'Run Disruption Simulation' to evaluate 30-day outcomes."
+
+        org_id = f"bu_{str(db_product.category).strip().lower().replace(' ', '_')}" if db_product.category else "all"
+        org_name = f"{str(db_product.category).strip()} Division" if db_product.category else "Global Enterprise"
+
+        return ProductRecommendationSummary(
+            sku=db_product.sku,
+            product_name=db_product.name,
+            organization_id=org_id,
+            organization_name=org_name,
+            is_data_complete=(len(missing_fields) == 0),
+            missing_fields=missing_fields,
+            eligible_strategies=strategies_eligibility,
+            active_recommendations=active_recs,
+            next_required_action=next_action,
         )
 
     # -----------------------------------------------------------------------
@@ -358,9 +746,10 @@ class ScenarioIntelligenceService:
         holding_rate = DEFAULT_HOLDING_RATE_PER_DAY
         penalty_rate = DEFAULT_STOCKOUT_PENALTY
 
-        # Try to pull verified unit cost and inventory from DB if available
+        # Try to pull verified unit cost, inventory, demand rate, and safety stock from DB if available
         is_live_db = False
         data_records_count = 0
+        inv_rec = None
         try:
             db_product = db.query(Product).filter((Product.sku == sku) | (Product.name.ilike(f"%{sku}%"))).first()
             if db_product:
@@ -369,42 +758,79 @@ class ScenarioIntelligenceService:
                 if p_price and float(p_price) > 0:
                     unit_cost = float(p_price)
                 inv_rec = db.query(Inventory).filter(Inventory.product_id == db_product.id).first()
-                if inv_rec and request.initial_inventory is None:
-                    inv_qty = getattr(inv_rec, "stock_quantity", None) or getattr(inv_rec, "quantity", None)
-                    if inv_qty is not None:
-                        initial_inv = int(inv_qty)
+                if inv_rec:
+                    if request.initial_inventory is None:
+                        inv_qty = getattr(inv_rec, "stock_quantity", None) or getattr(inv_rec, "quantity", None)
+                        if inv_qty is not None:
+                            initial_inv = int(inv_qty)
+                    if request.daily_demand is None and getattr(inv_rec, "average_daily_demand", None):
+                        demand_rate = float(inv_rec.average_daily_demand)
+                    if request.safety_stock is None and getattr(inv_rec, "safety_stock", None):
+                        safety_stock = int(inv_rec.safety_stock)
             data_records_count = db.query(Product).count() + db.query(Supplier).count() + db.query(Inventory).count()
         except Exception:
             pass
 
-        # Primary supplier lead time
-        primary_lead_time = DEFAULT_LEAD_TIME_DAYS
+        # Resolve Primary Supplier & Lead Time
+        resolved_primary_lead_time = None
+        if inv_rec and getattr(inv_rec, "lead_time_days", None):
+            resolved_primary_lead_time = int(inv_rec.lead_time_days)
+
         primary_sup_name = request.target_supplier_name or "Primary Supplier"
+        db_sup = None
         if request.target_supplier_id:
             try:
                 sup_uuid = uuid.UUID(request.target_supplier_id)
                 db_sup = db.query(Supplier).filter(Supplier.id == sup_uuid).first()
-                if db_sup:
-                    primary_sup_name = db_sup.name
-                    if db_sup.lead_time_days:
-                        primary_lead_time = int(db_sup.lead_time_days)
             except Exception:
                 pass
+            if not db_sup:
+                db_sup = db.query(Supplier).filter(
+                    (Supplier.name.ilike(request.target_supplier_id))
+                    | (Supplier.supplier_code == request.target_supplier_id)
+                ).first()
+
+        if not db_sup and inv_rec and inv_rec.supplier_id:
+            db_sup = db.query(Supplier).filter(Supplier.id == inv_rec.supplier_id).first()
+
+        if not db_sup and request.target_supplier_name:
+            db_sup = db.query(Supplier).filter(Supplier.name.ilike(f"%{request.target_supplier_name}%")).first()
+
+        if db_sup:
+            primary_sup_name = db_sup.name
+            if db_sup.lead_time_days:
+                resolved_primary_lead_time = int(db_sup.lead_time_days)
+
+        primary_lead_time = resolved_primary_lead_time if resolved_primary_lead_time is not None else DEFAULT_LEAD_TIME_DAYS
 
         # Alternate supplier lead time and cost
         alt_lead_time = request.alternative_lead_time_days or DEFAULT_ALTERNATIVE_LEAD_TIME
         alt_sup_name = request.alternative_supplier_name or "Backup Qualified Supplier"
         alt_unit_cost = request.alternative_unit_cost_usd or (unit_cost * 1.12)  # +12% premium default
+        db_alt = None
         if request.alternative_supplier_id:
             try:
                 alt_uuid = uuid.UUID(request.alternative_supplier_id)
                 db_alt = db.query(Supplier).filter(Supplier.id == alt_uuid).first()
-                if db_alt:
-                    alt_sup_name = db_alt.name
-                    if db_alt.lead_time_days:
-                        alt_lead_time = int(db_alt.lead_time_days)
             except Exception:
                 pass
+            if not db_alt:
+                db_alt = db.query(Supplier).filter(
+                    (Supplier.name.ilike(request.alternative_supplier_id))
+                    | (Supplier.supplier_code == request.alternative_supplier_id)
+                ).first()
+
+        if not db_alt and request.alternative_supplier_name:
+            db_alt = db.query(Supplier).filter(Supplier.name.ilike(f"%{request.alternative_supplier_name}%")).first()
+
+        if not db_alt and db_sup:
+            # Pick a distinct active supplier from DB if available
+            db_alt = db.query(Supplier).filter(Supplier.id != db_sup.id, Supplier.is_active == True).first()
+
+        if db_alt:
+            alt_sup_name = db_alt.name
+            if db_alt.lead_time_days:
+                alt_lead_time = int(db_alt.lead_time_days)
 
         # Disruption delay calculation
         if request.disruption_delay_days is not None:
@@ -709,13 +1135,23 @@ class ScenarioIntelligenceService:
         recommended = all_strategies[0]
 
         # Build recommendation rationale
+        cost_diff = round(disr_total_cost - recommended.total_cost_usd, 2)
+        if cost_diff >= 0:
+            cost_impact_text = f"saving ${cost_diff:,.2f} in financial exposure"
+        else:
+            cost_impact_text = f"requiring a net logistics/switching premium of ${abs(cost_diff):,.2f} to protect service level and eliminate stockout days"
+
         rec_rationale = (
             f"Strategy '{recommended.strategy_name}' is recommended for the '{obj.replace('_', ' ').title()}' objective. "
             f"It delivers a {recommended.service_level_pct}% fulfillment service level with an arrival on day {recommended.arrival_day} "
             f"(saving {disrupted_arrival - recommended.arrival_day} days vs unmitigated disruption), "
             f"yielding a total scenario cost of ${recommended.total_cost_usd:,.2f} "
-            f"(saving ${disr_total_cost - recommended.total_cost_usd:,.2f} against the unmitigated impact)."
+            f"({cost_impact_text})."
         )
+
+        all_constrained = all(s.feasibility_status != "FEASIBLE" for s in all_strategies)
+        if all_constrained and request.budget_limit_usd is not None:
+            rec_rationale += f" Notice: All evaluated mitigation strategies exceed the configured budget limit of ${request.budget_limit_usd:,.2f}. Consider adjusting budget constraints or selecting buffer rationing."
 
         # -------------------------------------------------------------------
         # 6. Affected Database Entities
@@ -902,11 +1338,40 @@ class ScenarioIntelligenceService:
             db.rollback()
             logger.error(f"Failed to persist SimulationEvidenceReport: {e}")
 
+        # Assemble verified route details
+        resolved_org_name = request.organization_name or (f"{db_product.category} Division" if (is_live_db and db_product and db_product.category) else "Global Enterprise")
+        resolved_product_name = db_product.name if (is_live_db and db_product) else sku
+        resolved_src_wh = request.source_warehouse_name or (inv_rec.warehouse.name if (is_live_db and inv_rec and inv_rec.warehouse) else f"{primary_sup_name} Dispatch Hub")
+        resolved_src_addr = request.source_address or "Address not available"
+        resolved_dest_wh = request.destination_warehouse_name or (inv_rec.warehouse.name if (is_live_db and inv_rec and inv_rec.warehouse) else "Regional Fulfillment Center")
+        resolved_dest_addr = request.destination_address or "Address not available"
+        resolved_carrier = request.carrier_name or "DHL Express Freight"
+        resolved_transport = request.transport_mode or "Air"
+
+        route_details = {
+            "organization_name": resolved_org_name,
+            "product_name": resolved_product_name,
+            "sku": sku,
+            "source_supplier_name": primary_sup_name,
+            "source_warehouse_name": resolved_src_wh,
+            "source_address": resolved_src_addr,
+            "destination_warehouse_name": resolved_dest_wh,
+            "destination_address": resolved_dest_addr,
+            "carrier_name": resolved_carrier,
+            "transport_mode": resolved_transport,
+            "lead_time_days": primary_lead_time,
+            "initial_inventory": initial_inv,
+            "daily_demand": demand_rate,
+            "unit_cost_usd": unit_cost,
+        }
+
         return ScenarioSimulationResponse(
             report_id=report_id,
             scenario_name=request.scenario_name,
             disruption_type=request.disruption_type,
             objective=obj,
+            organization_name=resolved_org_name,
+            route_details=route_details,
             created_at=datetime.now(timezone.utc).isoformat(),
             baseline=baseline_summary,
             disrupted=disrupted_summary,

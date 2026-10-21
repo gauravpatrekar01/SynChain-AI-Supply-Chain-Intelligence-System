@@ -186,6 +186,7 @@ def validate_supply_chain_data(
         "valid_rows": valid_rows,
         "invalid_rows": invalid_rows,
         "duplicates_count": duplicates_count,
+        "duplicates": duplicates_count,
         "summary": summary_text,
         "errors": errors[:100],  # cap to top 100 to avoid payload explosion
         "warnings": warnings[:100],

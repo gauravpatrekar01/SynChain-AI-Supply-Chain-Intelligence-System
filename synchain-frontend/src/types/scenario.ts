@@ -42,6 +42,16 @@ export interface DataReadinessCheck {
   recommendations: string[];
 }
 
+export interface OrganizationOption {
+  id: string;
+  name: string;
+  type: string;
+  category?: string;
+  import_id?: string;
+  description?: string;
+  product_count?: number;
+}
+
 export interface ScenarioConfigOption {
   value: string;
   label: string;
@@ -51,9 +61,56 @@ export interface ScenarioConfigOption {
   country?: string;
   unit_cost_usd?: number;
   stock_on_hand?: number;
+  on_hand_inventory?: number;
+  daily_demand?: number;
+  safety_stock?: number;
+  source_supplier_id?: string;
+  source_supplier_name?: string;
+  source_warehouse_name?: string;
+  source_address?: string;
+  destination_warehouse_name?: string;
+  destination_address?: string;
+  carrier_name?: string;
+  transport_mode?: string;
+  shipment_id?: string;
+  shipment_status?: string;
+  organization_id?: string;
+  organization_name?: string;
+  import_id?: string;
+  organization_ids?: string[];
+  has_alternative_supplier?: boolean;
+}
+
+export interface ProductStrategyEligibility {
+  strategy_id: string;
+  strategy_name: string;
+  is_eligible: boolean;
+  reason: string;
+  prerequisites?: string;
+}
+
+export interface ProductRecommendationSummary {
+  sku: string;
+  product_name: string;
+  organization_id?: string;
+  organization_name?: string;
+  is_data_complete: boolean;
+  missing_fields: string[];
+  eligible_strategies: ProductStrategyEligibility[];
+  active_recommendations: Array<{
+    id: string;
+    title: string;
+    category: string;
+    action: string;
+    priority: string;
+    benefit?: string;
+    trade_off?: string;
+  }>;
+  next_required_action: string;
 }
 
 export interface ScenarioConfigOptionsResponse {
+  organizations?: OrganizationOption[];
   products: ScenarioConfigOption[];
   suppliers: ScenarioConfigOption[];
   warehouses: ScenarioConfigOption[];
@@ -64,11 +121,19 @@ export interface ScenarioConfigOptionsResponse {
 export interface ScenarioSimulationRequest {
   scenario_name: string;
   disruption_type: DisruptionScenarioType;
+  organization_id?: string;
+  organization_name?: string;
   target_product_id?: string;
   sku?: string;
   target_supplier_id?: string;
   target_supplier_name?: string;
   target_warehouse_id?: string;
+  source_warehouse_name?: string;
+  source_address?: string;
+  destination_warehouse_name?: string;
+  destination_address?: string;
+  carrier_name?: string;
+  transport_mode?: string;
   duration_days: number;
   severity_pct: number;
   disruption_delay_days?: number;
@@ -207,6 +272,23 @@ export interface ScenarioSimulationResponse {
   scenario_name: string;
   disruption_type: string;
   objective: string;
+  organization_name?: string;
+  route_details?: {
+    organization_name?: string;
+    product_name?: string;
+    sku?: string;
+    source_supplier_name?: string;
+    source_warehouse_name?: string;
+    source_address?: string;
+    destination_warehouse_name?: string;
+    destination_address?: string;
+    carrier_name?: string;
+    transport_mode?: string;
+    lead_time_days?: number;
+    initial_inventory?: number;
+    daily_demand?: number;
+    unit_cost_usd?: number;
+  };
   created_at: string;
   baseline: BaselineAndDisruptedSummary;
   disrupted: BaselineAndDisruptedSummary;
@@ -219,7 +301,7 @@ export interface ScenarioSimulationResponse {
   data_provenance: DataProvenance;
   ai_narrative: AINarrative;
   model_version: string;
-  disclaimer: string;
+  disclaimer?: string;
 }
 
 export interface SimulationEvidenceReportSummary {

@@ -135,3 +135,19 @@ async def get_import_history(
         user_id=current_user.id,
         limit=limit
     )
+
+
+@router.delete("/{import_id}")
+async def cancel_import_session(
+    import_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """
+    Cancel an uncommitted import session and remove any temporary staged file safely.
+    """
+    return IngestionService.cancel_import(
+        db=db,
+        import_id=import_id,
+        user_id=current_user.id
+    )

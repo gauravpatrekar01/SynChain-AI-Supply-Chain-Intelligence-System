@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { NeonBadge } from '../common/NeonBadge';
+import { Tooltip } from '../common/Tooltip';
 import { SalesImportModal } from './SalesImportModal';
 import { apiService } from '../../services/api';
 import { soundFX } from '../../services/audioService';
@@ -91,7 +92,14 @@ export const SalesForecastingView: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
   // Reliable State Management for Forecast Card
-  type ForecastCardState = 'idle' | 'loading' | 'success' | 'insufficient_data' | 'error';
+  type ForecastCardState =
+    | 'idle'
+    | 'loading'
+    | 'forecast_available'
+    | 'insufficient_data'
+    | 'no_sales_data'
+    | 'forecast_unavailable'
+    | 'error';
   const [forecastState, setForecastState] = useState<ForecastCardState>('idle');
   const [forecastErrorMsg, setForecastErrorMsg] = useState<string | null>(null);
   const forecastRequestIdRef = React.useRef(0);
@@ -125,6 +133,15 @@ export const SalesForecastingView: React.FC = () => {
     const reqId = ++forecastRequestIdRef.current;
     setForecastState('loading');
     setForecastErrorMsg(null);
+
+    // Timeout safety: Ensure loading indicator cannot stay stuck indefinitely
+    const timeoutId = window.setTimeout(() => {
+      if (reqId === forecastRequestIdRef.current) {
+        setForecastState((curr) => (curr === 'loading' ? 'forecast_unavailable' : curr));
+        setForecastErrorMsg('Forecast calculation timed out. Please retry.');
+      }
+    }, 15000);
+
     try {
       const res = await apiService.getRevenueForecast({
         horizon_days: horizon,
@@ -132,16 +149,23 @@ export const SalesForecastingView: React.FC = () => {
         category: selectedCategory !== 'All' ? selectedCategory : undefined,
       });
 
+      window.clearTimeout(timeoutId);
+
       // Avoid race conditions: only update if this is the newest pending request
       if (reqId === forecastRequestIdRef.current) {
         setForecastData(res);
-        if (!res.has_data || !res.has_sufficient_history) {
+        if (!res.has_data) {
+          setForecastState('no_sales_data');
+        } else if (!res.has_sufficient_history) {
           setForecastState('insufficient_data');
+        } else if (res.total_forecasted_revenue === null || res.total_forecasted_revenue === undefined) {
+          setForecastState('forecast_unavailable');
         } else {
-          setForecastState('success');
+          setForecastState('forecast_available');
         }
       }
     } catch (err: any) {
+      window.clearTimeout(timeoutId);
       if (reqId === forecastRequestIdRef.current) {
         setForecastState('error');
         const formattedErr = formatApiError(err, 'Failed to generate revenue forecast.');
@@ -212,7 +236,18 @@ export const SalesForecastingView: React.FC = () => {
   useEffect(() => {
     fetchOverviewAndHistorical();
     fetchForecast(30);
-  }, [selectedYear, selectedCategory, selectedRegion]);
+
+    const handleImported = () => {
+      fetchOverviewAndHistorical();
+      fetchForecast(forecastHorizon);
+      fetchTransactions(txPage, txSearch);
+    };
+
+    window.addEventListener('synchain_data_imported', handleImported);
+    return () => {
+      window.removeEventListener('synchain_data_imported', handleImported);
+    };
+  }, [selectedYear, selectedCategory, selectedRegion, forecastHorizon, txPage, txSearch]);
 
   useEffect(() => {
     if (activeTab === 'forecasting') {
@@ -283,11 +318,11 @@ export const SalesForecastingView: React.FC = () => {
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
       borderColor: '#3b82f6',
       borderWidth: 1,
-      textStyle: { color: '#f8fafc', fontSize: 12 },
+      textStyle: { color: '#f8fafc', fontSize: 13 },
     },
     legend: {
-      data: ['Net Revenue ($)', 'Gross Revenue ($)', 'ASP ($)'],
-      textStyle: { color: '#94a3b8' },
+      data: ['Revenue After Returns ($)', 'Gross Billed Sales ($)', 'Average Price per Unit ($)'],
+      textStyle: { color: '#94a3b8', fontSize: 12 },
       top: 0,
     },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
@@ -296,7 +331,7 @@ export const SalesForecastingView: React.FC = () => {
         type: 'category',
         data: historicalData?.monthly_trends.map((m) => m.year_month) || [],
         axisPointer: { type: 'shadow' },
-        axisLabel: { color: '#94a3b8' },
+        axisLabel: { color: '#94a3b8', fontSize: 12 },
         axisLine: { lineStyle: { color: '#334155' } },
       },
     ],
@@ -306,15 +341,17 @@ export const SalesForecastingView: React.FC = () => {
         name: 'Revenue ($)',
         axisLabel: {
           color: '#94a3b8',
+          fontSize: 12,
           formatter: (v: number) => `$${(v / 1000).toFixed(0)}k`,
         },
         splitLine: { lineStyle: { color: '#1e293b' } },
       },
       {
         type: 'value',
-        name: 'ASP ($)',
+        name: 'Average Price ($)',
         axisLabel: {
           color: '#38bdf8',
+          fontSize: 12,
           formatter: (v: number) => `$${v}`,
         },
         splitLine: { show: false },
@@ -322,7 +359,7 @@ export const SalesForecastingView: React.FC = () => {
     ],
     series: [
       {
-        name: 'Net Revenue ($)',
+        name: 'Revenue After Returns ($)',
         type: 'bar',
         data: historicalData?.monthly_trends.map((m) => m.revenue) || [],
         itemStyle: {
@@ -331,7 +368,7 @@ export const SalesForecastingView: React.FC = () => {
         },
       },
       {
-        name: 'Gross Revenue ($)',
+        name: 'Gross Billed Sales ($)',
         type: 'bar',
         data: historicalData?.monthly_trends.map((m) => m.gross_revenue) || [],
         itemStyle: {
@@ -340,7 +377,7 @@ export const SalesForecastingView: React.FC = () => {
         },
       },
       {
-        name: 'ASP ($)',
+        name: 'Average Price per Unit ($)',
         type: 'line',
         yAxisIndex: 1,
         data: historicalData?.monthly_trends.map((m) => m.asp) || [],
@@ -360,11 +397,11 @@ export const SalesForecastingView: React.FC = () => {
       backgroundColor: 'rgba(15, 23, 42, 0.95)',
       borderColor: '#10b981',
       borderWidth: 1,
-      textStyle: { color: '#f8fafc', fontSize: 12 },
+      textStyle: { color: '#f8fafc', fontSize: 13 },
     },
     legend: {
-      data: ['Historical Revenue', 'Forecasted Revenue', '95% Upper Bound', '95% Lower Bound'],
-      textStyle: { color: '#94a3b8' },
+      data: ['Past Recorded Sales', 'Future Projected Revenue', 'Upper Forecast Range', 'Lower Forecast Range'],
+      textStyle: { color: '#94a3b8', fontSize: 12 },
       top: 0,
     },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
@@ -374,20 +411,21 @@ export const SalesForecastingView: React.FC = () => {
         ...(forecastData?.historical_points.map((p) => p.date) || []),
         ...(forecastData?.forecast_points.map((p) => p.date) || []),
       ],
-      axisLabel: { color: '#94a3b8' },
+      axisLabel: { color: '#94a3b8', fontSize: 11 },
       axisLine: { lineStyle: { color: '#334155' } },
     },
     yAxis: {
       type: 'value',
       axisLabel: {
         color: '#94a3b8',
+        fontSize: 12,
         formatter: (v: number) => `$${v.toLocaleString()}`,
       },
       splitLine: { lineStyle: { color: '#1e293b' } },
     },
     series: [
       {
-        name: 'Historical Revenue',
+        name: 'Past Recorded Sales',
         type: 'line',
         data: [
           ...(forecastData?.historical_points.map((p) => p.predicted_revenue) || []),
@@ -398,7 +436,7 @@ export const SalesForecastingView: React.FC = () => {
         symbol: 'none',
       },
       {
-        name: 'Forecasted Revenue',
+        name: 'Future Projected Revenue',
         type: 'line',
         data: [
           ...Array(forecastData?.historical_points.length || 0).fill(null),
@@ -410,7 +448,7 @@ export const SalesForecastingView: React.FC = () => {
         symbolSize: 4,
       },
       {
-        name: '95% Upper Bound',
+        name: 'Upper Forecast Range',
         type: 'line',
         data: [
           ...Array(forecastData?.historical_points.length || 0).fill(null),
@@ -421,7 +459,7 @@ export const SalesForecastingView: React.FC = () => {
         symbol: 'none',
       },
       {
-        name: '95% Lower Bound',
+        name: 'Lower Forecast Range',
         type: 'line',
         data: [
           ...Array(forecastData?.historical_points.length || 0).fill(null),
@@ -524,12 +562,12 @@ export const SalesForecastingView: React.FC = () => {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold tracking-tight text-white">
-                Sales Forecasting & Revenue Intelligence
+                Sales & Revenue Forecast
               </h1>
               <NeonBadge variant="cyan">Predictive ML</NeonBadge>
             </div>
             <p className="text-sm text-slate-400 mt-1">
-              Deterministic revenue tracking, statistical time-series forecasting, and inventory demand translation.
+              Tracks past customer sales, projects future revenue, and connects sales trends to supply chain replenishment.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -605,12 +643,12 @@ export const SalesForecastingView: React.FC = () => {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold tracking-tight text-white">
-              Sales Forecasting & Revenue Intelligence
+              Sales & Revenue Forecast
             </h1>
             <NeonBadge variant="optimal">Live Transactions</NeonBadge>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Real customer order revenue, time-series projections, and inventory demand synchronization.
+            Tracks past customer sales, projects future revenue, and connects sales trends to supply chain replenishment.
           </p>
         </div>
 
@@ -666,12 +704,12 @@ export const SalesForecastingView: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
         {[
           { id: 'overview', label: 'Sales Overview', icon: BarChart3 },
-          { id: 'historical', label: 'Historical Analysis', icon: Clock },
-          { id: 'forecasting', label: 'Revenue Forecasting', icon: TrendingUp },
-          { id: 'products', label: 'Product Performance', icon: Package },
+          { id: 'historical', label: 'Past Sales', icon: Clock },
+          { id: 'forecasting', label: 'Future Revenue', icon: TrendingUp },
+          { id: 'products', label: 'Best- and Worst-Selling Products', icon: Package },
           { id: 'scenarios', label: 'Scenario Simulator', icon: Sliders },
           { id: 'integration', label: 'Supply Chain Sync', icon: Truck },
-          { id: 'transactions', label: 'Transaction Ledger', icon: Layers },
+          { id: 'transactions', label: 'Sales Records', icon: Layers },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -705,32 +743,68 @@ export const SalesForecastingView: React.FC = () => {
             {/* 1. Total Revenue */}
             <div className="p-4 rounded-2xl glass-panel border border-white/10 relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
-                <span className="text-xs">Total Net Revenue</span>
-                <DollarSign className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-medium text-slate-300">Total Net Revenue</span>
+                <div className="flex items-center gap-1">
+                  <DollarSign className="w-4 h-4 text-emerald-400" />
+                  <Tooltip
+                    content={
+                      <div>
+                        <p className="font-semibold text-white mb-1">Total Net Revenue</p>
+                        <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Total net money earned from customer orders after subtracting returns and discounts.</p>
+                        <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Shows the actual money collected by the business from customer purchases.</p>
+                        <p><span className="text-amber-400 font-medium">What to watch:</span> Compare against gross sales to make sure returns are not eating into revenue.</p>
+                      </div>
+                    }
+                  />
+                </div>
               </div>
               <p className="text-xl lg:text-2xl font-bold text-white">
                 ${(kpis?.total_revenue || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1">Excludes returns & discounts</p>
+              <p className="text-[12px] text-slate-400 mt-1">Excludes returns & discounts</p>
             </div>
 
             {/* 2. Total Units Sold */}
             <div className="p-4 rounded-2xl glass-panel border border-white/10 relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
-                <span className="text-xs">Total Units Sold</span>
-                <Package className="w-4 h-4 text-blue-400" />
+                <span className="text-xs font-medium text-slate-300">Units Sold</span>
+                <div className="flex items-center gap-1">
+                  <Package className="w-4 h-4 text-blue-400" />
+                  <Tooltip
+                    content={
+                      <div>
+                        <p className="font-semibold text-white mb-1">Units Sold</p>
+                        <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Total number of physical product units delivered across all customer transactions.</p>
+                        <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Directly drives warehouse inventory consumption and restocking schedules.</p>
+                        <p><span className="text-amber-400 font-medium">What to watch:</span> Rising units with flat revenue may indicate heavy price discounting.</p>
+                      </div>
+                    }
+                  />
+                </div>
               </div>
               <p className="text-xl lg:text-2xl font-bold text-white">
                 {(kpis?.total_units_sold || 0).toLocaleString()}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1">{kpis?.total_transactions || 0} transactions</p>
+              <p className="text-[12px] text-slate-400 mt-1">From {kpis?.total_transactions || 0} customer orders</p>
             </div>
 
             {/* 3. Revenue Growth (MoM / YoY) */}
             <div className="p-4 rounded-2xl glass-panel border border-white/10 relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
-                <span className="text-xs">Revenue Growth</span>
-                <TrendingUp className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-medium text-slate-300">Revenue Change</span>
+                <div className="flex items-center gap-1">
+                  <TrendingUp className="w-4 h-4 text-cyan-400" />
+                  <Tooltip
+                    content={
+                      <div>
+                        <p className="font-semibold text-white mb-1">Revenue Change</p>
+                        <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Percentage increase or decrease in sales revenue over the comparison period.</p>
+                        <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Shows whether customer demand is growing, steady, or slowing down.</p>
+                        <p><span className="text-amber-400 font-medium">What to watch:</span> Sharp drops signal softening demand or missed fulfillment opportunities.</p>
+                      </div>
+                    }
+                  />
+                </div>
               </div>
               <div className="flex items-center gap-1.5">
                 <p className="text-xl lg:text-2xl font-bold text-white">
@@ -746,33 +820,57 @@ export const SalesForecastingView: React.FC = () => {
                   <ArrowDownRight className="w-4 h-4 text-rose-400" />
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {kpis?.revenue_growth_mom !== null ? 'Month-over-Month' : 'Year-over-Year (Eq. Months)'}
+              <p className="text-[12px] text-slate-400 mt-1">
+                {kpis?.revenue_growth_mom !== null ? 'Compared to previous month' : 'Compared to previous year'}
               </p>
             </div>
 
             {/* 4. Average Selling Price (ASP) */}
             <div className="p-4 rounded-2xl glass-panel border border-white/10 relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
-                <span className="text-xs">Average Selling Price</span>
-                <Percent className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs font-medium text-slate-300">Average Price / Unit</span>
+                <div className="flex items-center gap-1">
+                  <Percent className="w-4 h-4 text-indigo-400" />
+                  <Tooltip
+                    content={
+                      <div>
+                        <p className="font-semibold text-white mb-1">Average Price per Unit (ASP)</p>
+                        <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Net revenue divided by total units sold.</p>
+                        <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Reveals product mix shifts and whether revenue is coming from premium or budget items.</p>
+                        <p><span className="text-amber-400 font-medium">What to watch:</span> Declining unit prices without volume growth may erode profit margins.</p>
+                      </div>
+                    }
+                  />
+                </div>
               </div>
               <p className="text-xl lg:text-2xl font-bold text-white">
                 ${(kpis?.average_selling_price || 0).toFixed(2)}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1">Weighted per net unit</p>
+              <p className="text-[12px] text-slate-400 mt-1">Average price per unit sold</p>
             </div>
 
             {/* 5. Forecasted Revenue (30d) */}
             <div className="p-4 rounded-2xl glass-panel border border-white/10 relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
-                <span className="text-xs">Forecasted 30d Rev</span>
-                <Sparkles className="w-4 h-4 text-purple-400" />
+                <span className="text-xs font-medium text-slate-300">Forecasted 30d Revenue</span>
+                <div className="flex items-center gap-1">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <Tooltip
+                    content={
+                      <div>
+                        <p className="font-semibold text-white mb-1">Forecasted 30d Revenue</p>
+                        <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Estimated revenue over the next 30 days based on recent demand patterns and order trends.</p>
+                        <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Helps finance and supply chain teams align procurement budgets and cash flow.</p>
+                        <p><span className="text-amber-400 font-medium">What to watch:</span> Compare with supplier purchase commitments to ensure adequate working capital.</p>
+                      </div>
+                    }
+                  />
+                </div>
               </div>
               {forecastState === 'loading' ? (
                 <div className="flex items-center gap-2 py-1">
                   <RefreshCw className="w-4 h-4 text-purple-400 animate-spin" />
-                  <span className="text-sm font-medium text-purple-300">Computing...</span>
+                  <span className="text-sm font-medium text-purple-300">Generating forecast...</span>
                 </div>
               ) : forecastState === 'error' ? (
                 <div>
@@ -781,45 +879,78 @@ export const SalesForecastingView: React.FC = () => {
                     onClick={() => fetchForecast(30)}
                     className="text-[11px] text-cyan-400 hover:underline mt-1 flex items-center gap-1 cursor-pointer"
                   >
-                    <RefreshCw className="w-3 h-3" /> Retry
+                    <RefreshCw className="w-3 h-3" /> Retry Forecast
                   </button>
+                </div>
+              ) : forecastState === 'no_sales_data' ? (
+                <div>
+                  <p className="text-sm font-semibold text-slate-400">No sales data</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Import transactions to model</p>
                 </div>
               ) : forecastState === 'insufficient_data' ? (
                 <div>
-                  <p className="text-sm font-semibold text-amber-400">Insufficient sales history</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {forecastData?.explanation || 'Minimum 5 transaction dates required'}
+                  <p className="text-sm font-semibold text-amber-400">Insufficient historical data</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">
+                    {forecastData?.explanation || 'Min 5 transaction dates required'}
                   </p>
+                </div>
+              ) : forecastState === 'forecast_unavailable' ? (
+                <div>
+                  <p className="text-sm font-semibold text-slate-400">Forecast unavailable</p>
+                  <button
+                    onClick={() => fetchForecast(30)}
+                    className="text-[11px] text-cyan-400 hover:underline mt-1 flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Retry Forecast
+                  </button>
                 </div>
               ) : forecastData?.total_forecasted_revenue !== undefined ? (
                 <>
-                  <p className="text-xl lg:text-2xl font-bold text-purple-300">
+                  <p className="text-xl lg:text-2xl font-bold text-purple-300 font-mono">
                     ${forecastData.total_forecasted_revenue.toLocaleString('en-US', { minimumFractionDigits: 0 })}
                   </p>
-                  <p className="text-[11px] text-slate-400 mt-1">Next 30-day run rate</p>
+                  <p className="text-[12px] text-slate-400 mt-1">Projected 30-day run rate</p>
                 </>
               ) : (
-                <p className="text-sm text-slate-500">No forecast data</p>
+                <p className="text-sm text-slate-500">Forecast unavailable</p>
               )}
             </div>
 
             {/* 6. Forecast Accuracy */}
             <div className="p-4 rounded-2xl glass-panel border border-white/10 relative overflow-hidden">
               <div className="flex items-center justify-between text-slate-400 mb-1">
-                <span className="text-xs">Model Accuracy</span>
-                <ShieldAlert className="w-4 h-4 text-teal-400" />
+                <span className="text-xs font-medium text-slate-300">Forecast Quality</span>
+                <div className="flex items-center gap-1">
+                  <ShieldAlert className="w-4 h-4 text-teal-400" />
+                  <Tooltip
+                    content={
+                      <div>
+                        <p className="font-semibold text-white mb-1">Forecast Quality (Backtest Score)</p>
+                        <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Measures how closely past predictions matched actual customer sales (using Weighted Absolute Percentage Error).</p>
+                        <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Higher accuracy gives confidence when setting safety stock and purchasing schedules.</p>
+                        <p><span className="text-amber-400 font-medium">What to watch:</span> High-variance or sparse sales histories show lower scores until more transaction records are added.</p>
+                      </div>
+                    }
+                  />
+                </div>
               </div>
               <p className="text-xl lg:text-2xl font-bold text-teal-300">
                 {forecastState === 'loading'
                   ? 'Evaluating...'
                   : forecastData?.metrics?.accuracy_pct !== null && forecastData?.metrics?.accuracy_pct !== undefined
-                  ? `${forecastData.metrics.accuracy_pct}%`
+                  ? forecastData.metrics.accuracy_pct === 0 && (forecastData.metrics.wape || 0) > 100
+                    ? 'High Variance'
+                    : `${forecastData.metrics.accuracy_pct}%`
                   : forecastState === 'insufficient_data'
                   ? 'N/A'
                   : '80/20 Holdout'}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1">
-                {forecastData?.metrics?.wape ? `WAPE: ${forecastData.metrics.wape}%` : 'Statistical Backtest'}
+              <p className="text-[12px] text-slate-400 mt-1">
+                {forecastData?.metrics?.wape
+                  ? (forecastData.metrics.wape > 100
+                    ? `WAPE: ${forecastData.metrics.wape}% (Volatile)`
+                    : `WAPE: ${forecastData.metrics.wape}% error`)
+                  : 'Statistical Backtest'}
               </p>
             </div>
           </div>
@@ -828,13 +959,13 @@ export const SalesForecastingView: React.FC = () => {
           <div className="p-6 rounded-2xl glass-panel border border-white/10">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-base font-semibold text-white">Monthly Sales Revenue & ASP Trends</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Actual recorded monthly net revenue compared against gross billing and average selling price.
+                <h3 className="text-lg font-semibold text-white">Monthly Revenue and Average Price Trends</h3>
+                <p className="text-sm text-slate-400 mt-0.5">
+                  Compares actual customer sales revenue against gross billing and average price per unit across months.
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Data Freshness:</span>
+                <span className="text-xs text-slate-400">Data Last Updated:</span>
                 <span className="text-xs text-cyan-300 font-mono">{kpis?.data_freshness_timestamp}</span>
               </div>
             </div>
@@ -1021,23 +1152,35 @@ export const SalesForecastingView: React.FC = () => {
           <div className="p-4 rounded-2xl glass-panel border border-white/10 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-300">Forecast Horizon:</span>
-              {[30, 60, 90, 180, 365].map((days) => (
-                <button
-                  key={days}
-                  onClick={() => {
-                    soundFX.playClick();
-                    setForecastHorizon(days);
-                    fetchForecast(days, forecastProductFilter);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    forecastHorizon === days
-                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
-                      : 'bg-white/5 text-slate-400 hover:text-white border border-white/10'
-                  }`}
-                >
-                  {days < 180 ? `${days} Days` : days === 180 ? '6 Months' : '12 Months'}
-                </button>
-              ))}
+              {[30, 60, 90, 180, 365].map((days) => {
+                const label =
+                  days === 30
+                    ? 'Next 30 days'
+                    : days === 60
+                    ? 'Next 60 days'
+                    : days === 90
+                    ? 'Next 90 days'
+                    : days === 180
+                    ? 'Next 6 months'
+                    : 'Next 12 months';
+                return (
+                  <button
+                    key={days}
+                    onClick={() => {
+                      soundFX.playClick();
+                      setForecastHorizon(days);
+                      fetchForecast(days, forecastProductFilter);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      forecastHorizon === days
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/20'
+                        : 'bg-white/5 text-slate-400 hover:text-white border border-white/10'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="flex items-center gap-2">
@@ -1074,9 +1217,13 @@ export const SalesForecastingView: React.FC = () => {
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-right">
-                  <p className="text-xs text-slate-400">Projected {forecastHorizon}d Revenue</p>
-                  <p className="text-lg font-bold text-emerald-400">
-                    ${(forecastData?.total_forecasted_revenue || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  <p className="text-xs text-slate-400">
+                    Projected {forecastHorizon < 180 ? `${forecastHorizon}-day` : forecastHorizon === 180 ? '6-month' : '12-month'} Revenue
+                  </p>
+                  <p className="text-lg font-bold text-emerald-400 font-mono">
+                    {forecastData?.total_forecasted_revenue !== undefined && forecastData.has_data && forecastData.has_sufficient_history
+                      ? `$${forecastData.total_forecasted_revenue.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+                      : 'Unavailable'}
                   </p>
                 </div>
               </div>
@@ -1090,38 +1237,97 @@ export const SalesForecastingView: React.FC = () => {
           {/* Model Evaluation & Backtest Metrics Card */}
           {forecastData?.metrics && (
             <div className="p-6 rounded-2xl glass-panel border border-white/10">
-              <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                Out-of-Sample Model Evaluation (Chronological 80/20 Holdout)
-              </h3>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  Forecast Quality Test (Chronological 80/20 Holdout)
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  The model was trained on the first 80% of sales transactions and tested against the remaining 20% to check real-world accuracy.
+                </p>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                  <p className="text-xs text-slate-400">Model Accuracy</p>
-                  <p className="text-xl font-bold text-emerald-400 mt-0.5">
-                    {forecastData.metrics.accuracy_pct}%
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-300">Model Accuracy</p>
+                    <Tooltip
+                      content={
+                        <div>
+                          <p className="font-semibold text-white mb-1">Model Accuracy</p>
+                          <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Calculated as 100% minus Weighted Absolute Percentage Error (WAPE).</p>
+                          <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Shows overall confidence in future sales volume predictions.</p>
+                          <p><span className="text-amber-400 font-medium">What to watch:</span> If demand has high day-to-day variance, scores will be lower until more historical patterns accumulate.</p>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <p className="text-xl font-bold text-emerald-400 mt-1">
+                    {forecastData.metrics.accuracy_pct === 0 && (forecastData.metrics.wape || 0) > 100
+                      ? 'High Variance'
+                      : `${forecastData.metrics.accuracy_pct}%`}
                   </p>
-                  <p className="text-[10px] text-slate-500">100 - WAPE</p>
+                  <p className="text-[12px] text-slate-400 mt-0.5">
+                    {forecastData.metrics.accuracy_pct === 0 && (forecastData.metrics.wape || 0) > 100
+                      ? 'Volatile historical sales'
+                      : '100 - WAPE'}
+                  </p>
                 </div>
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                  <p className="text-xs text-slate-400">WAPE (Weighted Error)</p>
-                  <p className="text-xl font-bold text-cyan-400 mt-0.5">
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-300">Weighted Error (WAPE)</p>
+                    <Tooltip
+                      content={
+                        <div>
+                          <p className="font-semibold text-white mb-1">Weighted Absolute Percentage Error</p>
+                          <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Total prediction error divided by total volume, avoiding skew on low-volume days.</p>
+                          <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Standard retail & supply chain metric for forecast precision.</p>
+                          <p><span className="text-amber-400 font-medium">What to watch:</span> Lower is better. Under 25% is excellent; over 50% indicates irregular purchases.</p>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <p className="text-xl font-bold text-cyan-400 mt-1">
                     {forecastData.metrics.wape}%
                   </p>
-                  <p className="text-[10px] text-slate-500">Robust to zeros</p>
+                  <p className="text-[12px] text-slate-400 mt-0.5">Lower is better</p>
                 </div>
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                  <p className="text-xs text-slate-400">RMSE</p>
-                  <p className="text-xl font-bold text-white mt-0.5">
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-300">Root Mean Sq Error (RMSE)</p>
+                    <Tooltip
+                      content={
+                        <div>
+                          <p className="font-semibold text-white mb-1">Root Mean Squared Error</p>
+                          <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Average dollar error magnitude, with heavier penalties for large forecast misses.</p>
+                          <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Warns you if the model occasionally makes huge prediction blunders.</p>
+                          <p><span className="text-amber-400 font-medium">What to watch:</span> A large gap between RMSE and MAE indicates occasional extreme outlier sales spikes.</p>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <p className="text-xl font-bold text-white mt-1">
                     ${forecastData.metrics.rmse.toLocaleString()}
                   </p>
-                  <p className="text-[10px] text-slate-500">Root Mean Sq Error</p>
+                  <p className="text-[12px] text-slate-400 mt-0.5">Penalizes large misses</p>
                 </div>
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                  <p className="text-xs text-slate-400">MAE</p>
-                  <p className="text-xl font-bold text-white mt-0.5">
+                <div className="p-3.5 rounded-xl bg-white/5 border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium text-slate-300">Mean Absolute Error (MAE)</p>
+                    <Tooltip
+                      content={
+                        <div>
+                          <p className="font-semibold text-white mb-1">Mean Absolute Error</p>
+                          <p className="mb-1"><span className="text-emerald-400 font-medium">What it means:</span> Average dollar amount that predictions deviated from actual sales.</p>
+                          <p className="mb-1"><span className="text-blue-400 font-medium">Why it matters:</span> Direct dollar intuition for typical daily forecast variance.</p>
+                          <p><span className="text-amber-400 font-medium">What to watch:</span> Should represent a small percentage of your average daily sales revenue.</p>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <p className="text-xl font-bold text-white mt-1">
                     ${forecastData.metrics.mae.toLocaleString()}
                   </p>
-                  <p className="text-[10px] text-slate-500">Mean Absolute Error</p>
+                  <p className="text-[12px] text-slate-400 mt-0.5">Average dollar miss</p>
                 </div>
               </div>
             </div>

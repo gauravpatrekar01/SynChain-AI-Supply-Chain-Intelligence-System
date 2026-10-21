@@ -252,6 +252,16 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({ isOpen, onCl
                 </div>
               </div>
 
+              {/* Duplicate Handling Note */}
+              {preview.duplicate_in_file_count > 0 && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200 flex items-start gap-2.5">
+                  <span className="p-1 rounded bg-amber-500/20 text-amber-300 font-bold shrink-0">Note</span>
+                  <p>
+                    {preview.duplicate_in_file_count} duplicate records share existing transaction IDs. To prevent double-counting revenue, these rows will be safely bypassed during database import.
+                  </p>
+                </div>
+              )}
+
               {/* Missing required columns warning */}
               {preview.missing_required_columns.length > 0 && (
                 <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30">
@@ -270,6 +280,9 @@ export const SalesImportModal: React.FC<SalesImportModalProps> = ({ isOpen, onCl
                 <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 space-y-2">
                   <p className="text-xs font-semibold text-amber-300">
                     Row-Level Validation Notices ({preview.validation_errors.length})
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    The following rows will be excluded or sanitized due to formatting discrepancies:
                   </p>
                   <div className="max-h-32 overflow-y-auto space-y-1 text-xs text-slate-300 pr-2">
                     {preview.validation_errors.slice(0, 8).map((err, idx) => (

@@ -37,6 +37,7 @@ class SalesAnalyticsService:
         end_date: Optional[str] = None,
         category: Optional[str] = None,
         region: Optional[str] = None,
+        product_id: Optional[str] = None,
     ) -> SalesOverviewKPIs:
         """
         Calculates high-level sales KPIs from real database transactions.
@@ -62,6 +63,8 @@ class SalesAnalyticsService:
             filters.append(func.lower(SalesTransaction.product_category) == category.lower().strip())
         if region and region.lower() != "all":
             filters.append(func.lower(SalesTransaction.region) == region.lower().strip())
+        if product_id and product_id.lower() != "all":
+            filters.append(func.lower(SalesTransaction.product_id) == product_id.lower().strip())
 
         query = db.query(SalesTransaction)
         if filters:
@@ -185,6 +188,7 @@ class SalesAnalyticsService:
         end_date: Optional[str] = None,
         category: Optional[str] = None,
         region: Optional[str] = None,
+        product_id: Optional[str] = None,
     ) -> HistoricalSalesAnalysisResponse:
         """
         Generates comprehensive historical analysis with monthly/quarterly trends,
@@ -208,6 +212,8 @@ class SalesAnalyticsService:
             filters.append(func.lower(SalesTransaction.product_category) == category.lower().strip())
         if region and region.lower() != "all":
             filters.append(func.lower(SalesTransaction.region) == region.lower().strip())
+        if product_id and product_id.lower() != "all":
+            filters.append(func.lower(SalesTransaction.product_id) == product_id.lower().strip())
 
         query = db.query(SalesTransaction)
         if filters:
@@ -254,7 +260,7 @@ class SalesAnalyticsService:
                 date_range_applied={"year": year, "start_date": start_date, "end_date": end_date},
             )
 
-        kpis = cls.get_overview_kpis(db, year, start_date, end_date, category, region)
+        kpis = cls.get_overview_kpis(db, year, start_date, end_date, category, region, product_id)
 
         # 1. Monthly Trends
         monthly_raw = (

@@ -4,6 +4,7 @@ import { Sparkles, ShieldCheck, AlertCircle, Play, ArrowUpRight } from 'lucide-r
 import { useAuth } from '../../context/AuthContext';
 import { useSupplyChain } from '../../context/SupplyChainContext';
 import { Button } from '../common/Button';
+import { Tooltip } from '../common/Tooltip';
 import { healthStatusLabel } from '../../services/healthScore';
 
 interface HeroSectionProps {
@@ -45,7 +46,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
           </h1>
 
           <p className="mt-2 text-sm sm:text-base text-slate-300 leading-relaxed">
-            Overall health reflects supplier reliability, inventory coverage, order outcomes, and recent API integration checks.
+            An overall indicator of how well the supply chain is performing. It combines supplier reliability, inventory coverage, order fulfillment, and connected service checks.
             {' '}<span className={`${healthColor} font-semibold`}>{healthLoading && !hasScore ? 'Calculating health…' : hasScore ? `${health.score.toFixed(1)}% · ${healthLabel}` : healthLabel}</span>.
           </p>
 
@@ -56,7 +57,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
               leftIcon={<Play className="w-4 h-4 fill-current" />}
               onClick={() => onNavigate('scenario-builder')}
             >
-              Run AI Disruption Simulation
+              Run Disruption Simulation
             </Button>
             <Button
               variant="secondary"
@@ -65,7 +66,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
               rightIcon={<ArrowUpRight className="w-4 h-4" />}
               onClick={() => onNavigate('recommendations')}
             >
-              Review Mitigation Strategies
+              Ways to Reduce Impact
             </Button>
           </div>
         </div>
@@ -101,7 +102,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
             </svg>
             <div className="absolute flex flex-col items-center justify-center">
               <output aria-label="Overall health score" className="text-xl font-bold text-white tracking-tight font-mono-telemetry">{hasScore ? `${health.score.toFixed(1)}%` : '—'}</output>
-              <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Health</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Health</span>
             </div>
           </div>
 
@@ -111,19 +112,19 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
               <span>{healthLabel}{hasScore ? ` · Grade ${health.resilienceRating}` : ''}</span>
             </div>
             <p className="text-xs text-slate-400">
-              Available signals:{' '}
+              Data Sources Available:{' '}
               <span className="text-slate-200 font-semibold font-mono-telemetry">
                 {availableComponents.length} / {health.components?.length || 4}
               </span>
             </p>
             <p className="text-xs text-slate-400">
-              Active Disruptions:{' '}
+              Current Supply Chain Problems:{' '}
               <span className="text-amber-400 font-semibold font-mono-telemetry">
                 {health.lastUpdated ? `${health.activeDisruptionsCount} tracked` : 'Awaiting data'}
               </span>
             </p>
-            <div className="pt-1 flex items-center gap-1 text-[10px] text-slate-500 font-mono-telemetry">
-              <AlertCircle className="w-3 h-3 text-cyan-400" />
+            <div className="pt-1 flex items-center gap-1 text-[11px] text-slate-400 font-mono-telemetry">
+              <AlertCircle className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               <span>{healthLoading ? 'Refreshing…' : health.lastUpdated ? `Updated ${new Date(health.lastUpdated).toLocaleTimeString()}` : 'Awaiting first check'}</span>
             </div>
           </div>
@@ -136,11 +137,40 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onNavigate }) => {
         </div>}
         <p className="text-xs text-slate-400">{health.explanation}</p>
         {!!health.components?.length && <dl aria-label="Health score breakdown" className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-          {health.components.map((component) => <div key={component.key} className="rounded-lg bg-slate-900/60 border border-white/5 px-3 py-2">
-            <dt className="text-xs text-slate-400">{component.label}</dt>
-            <dd className="mt-1 text-sm font-semibold text-slate-100">{component.score == null ? 'No observed data' : `${component.score.toFixed(1)}%`}</dd>
-            <p className="mt-1 text-[10px] text-slate-500">{component.sampleSize} records{component.score != null && availableWeight > 0 ? ` · ${Math.round(component.weight / availableWeight * 100)}% of score` : ' · Excluded from score'}</p>
-          </div>)}
+          {health.components.map((component) => {
+            const friendlyLabel =
+              component.key === 'suppliers'
+                ? 'Supplier Reliability'
+                : component.key === 'inventory'
+                ? 'Inventory Coverage'
+                : component.key === 'orders' || component.key === 'fulfillment'
+                ? 'Order Fulfillment'
+                : component.key === 'integrations'
+                ? 'Connected Services Status'
+                : component.label;
+
+            const friendlyDesc =
+              component.key === 'suppliers'
+                ? 'How consistently suppliers deliver on time and meet quality expectations.'
+                : component.key === 'inventory'
+                ? 'How well current stock meets expected demand.'
+                : component.key === 'orders' || component.key === 'fulfillment'
+                ? 'How successfully customer orders are completed.'
+                : component.key === 'integrations'
+                ? 'Checks whether external services are working correctly.'
+                : `${component.sampleSize} records`;
+
+            return (
+              <div key={component.key} className="rounded-xl bg-slate-900/60 border border-white/5 px-3 py-2.5">
+                <dt className="text-xs font-medium text-slate-400 flex items-center justify-between" title={friendlyDesc}>
+                  <span>{friendlyLabel}</span>
+                  <Tooltip content={friendlyDesc} iconSize={12} />
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-slate-100">{component.score == null ? 'No observed data' : `${component.score.toFixed(1)}%`}</dd>
+                <p className="mt-1 text-[11px] text-slate-400 leading-tight">{component.sampleSize} records{component.score != null && availableWeight > 0 ? ` · ${Math.round(component.weight / availableWeight * 100)}% of score` : ' · Excluded'}</p>
+              </div>
+            );
+          })}
         </dl>}
       </div>
     </div>

@@ -28,7 +28,55 @@ export const mockAIHealth: AIHealthScore = {
 };
 
 export const mockKPIMetrics: KPIMetric[] = [
-  { id: '1', title: 'On-Time Delivery', value: 94.2, suffix: '%', changePct: 2.1, isPositive: true, sparkline: [90, 92, 91, 94, 94.2], status: 'optimal', description: 'OTD Rate', iconName: 'truck' }
+  {
+    id: 'kpi-risk',
+    title: 'Risk Score',
+    value: 28,
+    suffix: '/100',
+    changePct: -3.2,
+    isPositive: true,
+    sparkline: [35, 33, 30, 29, 28],
+    status: 'optimal',
+    description: 'Composite vulnerability score combining likelihood and severity of problems across supply chain nodes.',
+    iconName: 'ShieldCheck',
+  },
+  {
+    id: 'kpi-disruptions',
+    title: 'Active Disruptions',
+    value: 2,
+    suffix: ' Events',
+    changePct: -15.0,
+    isPositive: true,
+    sparkline: [4, 3, 3, 2, 2],
+    status: 'nominal',
+    description: 'Active supplier delays, port blockages, or facility outages currently being monitored.',
+    iconName: 'AlertTriangle',
+  },
+  {
+    id: 'kpi-inventory',
+    title: 'Inventory Value',
+    value: 24.1,
+    prefix: '$',
+    suffix: 'M',
+    changePct: 4.8,
+    isPositive: true,
+    sparkline: [21.5, 22.0, 23.4, 23.8, 24.1],
+    status: 'optimal',
+    description: 'Real-time dollar value of all finished goods and raw component inventory stored across warehouses.',
+    iconName: 'Warehouse',
+  },
+  {
+    id: 'kpi-suppliers',
+    title: 'Supplier Reliability',
+    value: 86.4,
+    suffix: '%',
+    changePct: 1.4,
+    isPositive: true,
+    sparkline: [82, 84, 83, 85, 86.4],
+    status: 'optimal',
+    description: 'Average rating of active suppliers based on delivery consistency and product quality.',
+    iconName: 'Building2',
+  },
 ];
 
 export const mockIncidentAlerts: LiveIncidentAlert[] = [

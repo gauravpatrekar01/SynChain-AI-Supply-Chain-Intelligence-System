@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { NeonBadge } from '../common/NeonBadge';
 import { Button } from '../common/Button';
+import { Tooltip } from '../common/Tooltip';
 import { soundFX } from '../../services/audioService';
 import { apiService } from '../../services/api';
 import { InventoryItem, InventorySummaryStats, RecalculateBufferResult } from '../../types';
@@ -356,15 +357,21 @@ export const InventoryBufferView: React.FC = () => {
       {/* KPI Summary Stats Ribbon */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="p-3.5 rounded-2xl glass-panel border border-white/10 font-mono-telemetry">
-          <span className="text-[10px] uppercase text-slate-400 block tracking-wider">Tracked Products</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase text-slate-400 block tracking-wider truncate">Tracked Products</span>
+            <Tooltip content="Total active products and raw component SKUs registered across all warehouse facilities." />
+          </div>
           <span className="text-lg sm:text-xl font-bold text-white mt-1 block">
             {filteredItems.length}
           </span>
-          <span className="text-[10px] text-slate-500">PostgreSQL active records</span>
+          <span className="text-[10px] text-slate-500">Active catalog items</span>
         </div>
 
         <div className="p-3.5 rounded-2xl glass-panel border border-white/10 font-mono-telemetry">
-          <span className="text-[10px] uppercase text-slate-400 block tracking-wider">Gross On-Hand</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase text-slate-400 block tracking-wider truncate">On-Hand Stock</span>
+            <Tooltip content="Total physical inventory units currently stored in warehouses and ready for fulfillment or manufacturing." />
+          </div>
           <span className="text-lg sm:text-xl font-bold text-cyan-300 mt-1 block">
             {totalOnHand.toLocaleString()}
           </span>
@@ -372,23 +379,32 @@ export const InventoryBufferView: React.FC = () => {
         </div>
 
         <div className="p-3.5 rounded-2xl glass-panel border border-white/10 font-mono-telemetry">
-          <span className="text-[10px] uppercase text-slate-400 block tracking-wider">Safety Floor Floor</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase text-slate-400 block tracking-wider truncate">Safety Reserve</span>
+            <Tooltip content="Total minimum safety stock units configured to absorb unexpected demand surges or supplier shipping delays." />
+          </div>
           <span className="text-lg sm:text-xl font-bold text-blue-300 mt-1 block">
             {totalSafety.toLocaleString()}
           </span>
-          <span className="text-[10px] text-slate-500">Aggregate reserve threshold</span>
+          <span className="text-[10px] text-slate-500">Reserve buffer threshold</span>
         </div>
 
         <div className="p-3.5 rounded-2xl glass-panel border border-white/10 font-mono-telemetry">
-          <span className="text-[10px] uppercase text-slate-400 block tracking-wider">Critical Depletion</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase text-slate-400 block tracking-wider truncate">Below Safety</span>
+            <Tooltip content="Products whose current on-hand units have dropped below their configured safety stock floor." />
+          </div>
           <span className="text-lg sm:text-xl font-bold text-rose-400 mt-1 block">
             {criticalCount}
           </span>
-          <span className="text-[10px] text-rose-500/80">Below safety stock floor</span>
+          <span className="text-[10px] text-rose-500/80">Replenishment needed</span>
         </div>
 
         <div className="col-span-2 md:col-span-1 p-3.5 rounded-2xl glass-panel border border-white/10 font-mono-telemetry">
-          <span className="text-[10px] uppercase text-slate-400 block tracking-wider">Health Status</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase text-slate-400 block tracking-wider truncate">Buffer Health</span>
+            <Tooltip content="Health breakdown across the inventory network: optimal stock vs low or critical buffer levels." />
+          </div>
           <div className="flex items-center gap-2 mt-1.5">
             <span className="text-xs font-bold text-emerald-400">{optimalCount} Optimal</span>
             <span className="text-slate-600">•</span>

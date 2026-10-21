@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { NeonBadge } from '../common/NeonBadge';
+import { Tooltip } from '../common/Tooltip';
 import { soundFX } from '../../services/audioService';
 
 const nodeTypes = {
@@ -130,14 +131,22 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl sm:text-2xl font-bold text-white font-display tracking-tight">
-              Global Supply Chain Digital Twin
+              Supply Chain Digital Model
             </h2>
             <NeonBadge variant="blue" size="sm">
               {digitalTwinNodes.length} NODES LIVE
             </NeonBadge>
+            <Tooltip
+              content={
+                <div>
+                  <p className="font-semibold text-white mb-1">Supply Chain Digital Model</p>
+                  <p>A digital representation of your physical supply network. Click any facility or supplier to inspect capacity, lead times, and run what-if disruption tests.</p>
+                </div>
+              }
+            />
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Real-time topology model mapping {digitalTwinNodes.length} multi-tier entities, lead-time velocity, and material bottlenecks.
+            A visual digital representation of suppliers, factories, and warehouses used to test possible scenarios.
           </p>
         </div>
 
@@ -202,7 +211,7 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
           {/* Floating Instructions */}
           <div className="absolute top-4 left-4 z-10 hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-white/10 text-xs text-slate-300 backdrop-blur-md">
             <Info className="w-3.5 h-3.5 text-blue-400" />
-            <span>Click any node to inspect telemetry or simulate localized disruptions</span>
+            <span>Click any facility to view details or test a disruption scenario</span>
           </div>
         </div>
 
@@ -225,15 +234,15 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
               <div className="mt-4 space-y-3 text-xs">
                 <div className="p-3 rounded-xl bg-slate-900/80 border border-white/5 space-y-2">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Capacity Load:</span>
+                    <span className="text-slate-400">Capacity Used:</span>
                     <span className="font-semibold text-white font-mono-telemetry">{selectedNode.capacityUtilization || 85}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Average Lead Time:</span>
+                    <span className="text-slate-400">Average Delivery Time:</span>
                     <span className="font-semibold text-slate-200 font-mono-telemetry">{selectedNode.leadTimeDays || 7} Days</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Vulnerability Risk:</span>
+                    <span className="text-slate-400">Risk Level:</span>
                     <span className={`font-semibold font-mono-telemetry ${(selectedNode.riskScore || 0) > 60 ? 'text-rose-400' : 'text-emerald-400'}`}>
                       {selectedNode.riskScore || 20} / 100
                     </span>
@@ -243,12 +252,12 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
                 <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 space-y-1">
                   <div className="flex items-center gap-1.5 text-purple-300 font-semibold text-xs">
                     <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                    <span>AI Autonomous Insight</span>
+                    <span>AI Analysis</span>
                   </div>
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                  <p className="text-[12px] text-slate-300 leading-relaxed">
                     {selectedNode.status === 'optimal'
-                      ? 'Node operating at peak efficiency. Buffer levels sufficient for 45 days forward demand.'
-                      : 'High capacity pressure detected. Dual-sourcing or safety buffer expansion recommended.'}
+                      ? 'Facility operating smoothly. Inventory buffers are sufficient for 45 days of expected demand.'
+                      : 'High capacity pressure detected. Adding a backup supplier or extra safety stock is recommended.'}
                   </p>
                 </div>
               </div>
@@ -263,7 +272,7 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
                 leftIcon={<Play className="w-3.5 h-3.5" />}
                 onClick={() => handleSimulateDisruptionOnNode(selectedNode)}
               >
-                Inject Disruption Scenario
+                Test Disruption on this Facility
               </Button>
               <Button
                 variant="secondary"
@@ -271,7 +280,7 @@ export const DigitalTwinView: React.FC<DigitalTwinViewProps> = ({ onNavigate }) 
                 className="w-full"
                 onClick={() => setSelectedNode(null)}
               >
-                Close Inspector
+                Close Details
               </Button>
             </div>
           </div>

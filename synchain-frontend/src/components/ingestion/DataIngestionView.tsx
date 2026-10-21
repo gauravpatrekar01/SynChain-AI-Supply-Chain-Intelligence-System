@@ -194,7 +194,7 @@ export const DataIngestionView: React.FC<DataIngestionViewProps> = ({ onNavigate
   };
 
   const handleExecuteImport = async () => {
-    if (!stagedData) return;
+    if (!stagedData || uploadStatus === 'importing') return;
     soundFX.playClick();
     setUploadStatus('importing');
     setErrorMessage(null);
@@ -220,14 +220,22 @@ export const DataIngestionView: React.FC<DataIngestionViewProps> = ({ onNavigate
     } catch (err: any) {
       soundFX.playError();
       setUploadStatus('error');
-      setErrorMessage(err.response?.data?.detail || "Import failed during database insertion.");
+      const detail = err.response?.data?.detail || err.message || "Import failed during database insertion.";
+      setErrorMessage(detail);
     } finally {
       setUploadStatus('idle');
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     soundFX.playClick();
+    if (stagedData?.import_id && activeStep !== 'completed') {
+      try {
+        await apiService.cancelIngestion(stagedData.import_id);
+      } catch {
+        // Safe to ignore if already cleaned up
+      }
+    }
     setActiveStep('upload');
     setStagedData(null);
     setSelectedSheet('');
@@ -271,6 +279,13 @@ export const DataIngestionView: React.FC<DataIngestionViewProps> = ({ onNavigate
           <div className="flex-1">
             <p className="font-semibold text-rose-200">Ingestion Error</p>
             <p className="text-xs text-rose-300/90 mt-0.5">{errorMessage}</p>
+            {(errorMessage.toLowerCase().includes('staged file') || errorMessage.toLowerCase().includes('expired') || errorMessage.toLowerCase().includes('re-upload')) && (
+              <div className="mt-2.5">
+                <Button variant="secondary" size="sm" onClick={handleReset} leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>
+                  Re-upload CSV File
+                </Button>
+              </div>
+            )}
           </div>
           <button onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-white">✕</button>
         </div>

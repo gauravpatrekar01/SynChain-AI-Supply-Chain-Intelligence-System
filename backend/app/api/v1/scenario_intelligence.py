@@ -24,6 +24,7 @@ from app.schemas.scenario_intelligence import (
     ScenarioSimulationRequest,
     ScenarioSimulationResponse,
     SimulationEvidenceReportSummary,
+    ProductRecommendationSummary,
 )
 from app.services.simulation.scenario_intelligence_service import ScenarioIntelligenceService
 
@@ -46,6 +47,18 @@ def get_scenario_config_options(db: Session = Depends(get_db)):
     Never fabricates fictional supplier IDs.
     """
     return ScenarioIntelligenceService.get_config_options(db)
+
+
+@router.get("/product-recommendations", response_model=ProductRecommendationSummary)
+def get_product_recommendations(
+    sku: str = Query(..., description="Target component SKU or identifier"),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns live strategy eligibility, data completeness, and active explainable
+    database recommendations for a selected component in the Scenario Builder.
+    """
+    return ScenarioIntelligenceService.get_product_recommendation_summary(db=db, sku=sku)
 
 
 @router.post("/simulate", response_model=ScenarioSimulationResponse)

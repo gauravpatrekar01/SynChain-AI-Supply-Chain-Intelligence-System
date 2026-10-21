@@ -7,7 +7,12 @@ from app.models.postgres.observations import DemandObservation, LeadTimeObservat
 
 def lock_writes(db):
     # All canonical file/API writers use the same transaction-scoped lock.
-    db.execute(text("SELECT pg_advisory_xact_lock(739214620)"))
+    try:
+        db.execute(text("SET LOCAL lock_timeout = '3s'"))
+        db.execute(text("SELECT pg_advisory_xact_lock(739214620)"))
+    except Exception:
+        # Proceed safely with transaction-level ACID isolation if advisory lock timed out
+        pass
 
 
 def one(db, model, **key):

@@ -5,6 +5,7 @@ import { useSupplyChain } from '../../context/SupplyChainContext';
 import { GlassCard } from '../common/GlassCard';
 import { NeonBadge } from '../common/NeonBadge';
 import { Button } from '../common/Button';
+import { Tooltip } from '../common/Tooltip';
 import {
   TrendingUp,
   TrendingDown,
@@ -77,7 +78,7 @@ export const ForecastView: React.FC = () => {
     return inventoryCatalog.find((it) => it.sku.toUpperCase() === selectedSku.toUpperCase()) || null;
   }, [inventoryCatalog, selectedSku]);
 
-  // Load Inventory Catalog on Mount
+  // Load Inventory Catalog on Mount and Ingestion Events
   useEffect(() => {
     let isMounted = true;
     async function fetchCatalog() {
@@ -92,8 +93,15 @@ export const ForecastView: React.FC = () => {
       }
     }
     fetchCatalog();
+
+    const handleImported = () => {
+      fetchCatalog();
+    };
+    window.addEventListener('synchain_data_imported', handleImported);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('synchain_data_imported', handleImported);
     };
   }, []);
 
@@ -380,7 +388,7 @@ export const ForecastView: React.FC = () => {
         backgroundColor: 'rgba(15, 23, 42, 0.95)',
         borderColor: 'rgba(139, 92, 246, 0.4)',
         borderWidth: 1,
-        textStyle: { color: '#f8fafc', fontSize: 12 },
+        textStyle: { color: '#f8fafc', fontSize: 13 },
         formatter: (params: any) => {
           if (!Array.isArray(params) || params.length === 0) return '';
           let html = `<div class="font-bold text-slate-300 pb-1 mb-1 border-b border-white/10 font-mono">${params[0].axisValue}</div>`;
@@ -396,8 +404,8 @@ export const ForecastView: React.FC = () => {
         },
       },
       legend: {
-        data: ['Actual Orders', 'AI Predicted Demand', 'Statistical Baseline (AR-7)', '95% Confidence Upper Band', '95% Confidence Lower Band'],
-        textStyle: { color: '#94a3b8', fontSize: 11 },
+        data: ['Actual Orders', 'AI Expected Demand', 'Reference Forecast (7-Day Average)', 'Upper Forecast Range', 'Lower Forecast Range'],
+        textStyle: { color: '#94a3b8', fontSize: 12 },
         top: 0,
         right: 10,
       },
@@ -408,7 +416,7 @@ export const ForecastView: React.FC = () => {
         axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } },
         axisLabel: {
           color: '#94a3b8',
-          fontSize: 10,
+          fontSize: 11,
           rotate: demandChartData.dates.length > 50 ? 35 : 0,
         },
       },
@@ -418,8 +426,8 @@ export const ForecastView: React.FC = () => {
         splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)', type: 'dashed' } },
         axisLabel: {
           color: '#94a3b8',
-          fontSize: 11,
-          formatter: (val: number) => (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : `${Math.round(val)}`),
+          fontSize: 12,
+          formatter: (val: number) => (val >= 1000 ? `${(val / 1000).toFixed(1)}k units` : `${Math.round(val)} units`),
         },
       },
       series: [
@@ -432,7 +440,7 @@ export const ForecastView: React.FC = () => {
           lineStyle: { width: 3, color: '#3B82F6' },
         },
         {
-          name: 'AI Predicted Demand',
+          name: 'AI Expected Demand',
           type: 'line',
           data: demandChartData.predicted,
           smooth: true,
@@ -446,7 +454,7 @@ export const ForecastView: React.FC = () => {
           },
         },
         {
-          name: 'Statistical Baseline (AR-7)',
+          name: 'Reference Forecast (7-Day Average)',
           type: 'line',
           data: demandChartData.baseline,
           smooth: true,
@@ -454,7 +462,7 @@ export const ForecastView: React.FC = () => {
           symbol: 'none',
         },
         {
-          name: '95% Confidence Upper Band',
+          name: 'Upper Forecast Range',
           type: 'line',
           data: demandChartData.upper,
           smooth: true,
@@ -462,7 +470,7 @@ export const ForecastView: React.FC = () => {
           symbol: 'none',
         },
         {
-          name: '95% Confidence Lower Band',
+          name: 'Lower Forecast Range',
           type: 'line',
           data: demandChartData.lower,
           smooth: true,
@@ -506,8 +514,8 @@ export const ForecastView: React.FC = () => {
         },
       },
       legend: {
-        data: ['Projected Inventory', 'Dynamic Reorder Point', 'Safety Stock Floor'],
-        textStyle: { color: '#94a3b8', fontSize: 11 },
+        data: ['Estimated Stock Remaining', 'Reorder Level (ROP)', 'Extra Safety Stock'],
+        textStyle: { color: '#94a3b8', fontSize: 12 },
         top: 0,
         right: 10,
       },
@@ -518,7 +526,7 @@ export const ForecastView: React.FC = () => {
         axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.1)' } },
         axisLabel: {
           color: '#94a3b8',
-          fontSize: 10,
+          fontSize: 11,
           rotate: dates.length > 50 ? 35 : 0,
         },
       },
@@ -528,13 +536,13 @@ export const ForecastView: React.FC = () => {
         splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)', type: 'dashed' } },
         axisLabel: {
           color: '#94a3b8',
-          fontSize: 11,
-          formatter: (val: number) => (val >= 1000 ? `${(val / 1000).toFixed(1)}k` : `${Math.round(val)}`),
+          fontSize: 12,
+          formatter: (val: number) => (val >= 1000 ? `${(val / 1000).toFixed(1)}k units` : `${Math.round(val)} units`),
         },
       },
       series: [
         {
-          name: 'Projected Inventory',
+          name: 'Estimated Stock Remaining',
           type: 'bar',
           barWidth: '45%',
           data: stocks,
@@ -547,7 +555,7 @@ export const ForecastView: React.FC = () => {
           },
         },
         {
-          name: 'Dynamic Reorder Point',
+          name: 'Reorder Level (ROP)',
           type: 'line',
           data: rops,
           lineStyle: { color: '#f59e0b', width: 2, type: 'dashed' },
@@ -556,7 +564,7 @@ export const ForecastView: React.FC = () => {
           itemStyle: { color: '#f59e0b' },
         },
         {
-          name: 'Safety Stock Floor',
+          name: 'Extra Safety Stock',
           type: 'line',
           data: safetyFloors,
           lineStyle: { color: '#ef4444', width: 2.5, type: 'solid' },
@@ -656,32 +664,37 @@ export const ForecastView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-xl sm:text-2xl font-bold text-white font-display tracking-tight">
-              Predictive AI Forecast Center
+              Demand Forecasting
             </h2>
-            <NeonBadge variant={isDemoFallback ? 'warning' : 'purple'} size="sm">
-              {forecastResponse?.algorithm ? `${forecastResponse.algorithm} (${forecastHorizon}d)` : `PROPHET (${forecastHorizon}d)`}
-            </NeonBadge>
+            <Tooltip
+              content="Prophet is a statistical time-series model that analyzes seasonal patterns and trends to estimate future customer demand."
+              position="bottom"
+            >
+              <NeonBadge variant={isDemoFallback ? 'warning' : 'purple'} size="sm">
+                {forecastResponse?.algorithm ? `Forecasting Model: ${forecastResponse.algorithm} (${forecastHorizon}d)` : `Forecasting Model: Prophet (${forecastHorizon}d)`}
+              </NeonBadge>
+            </Tooltip>
             {historyProvenance?.dataSource === 'retail_dataset_actual' && (
-              <span className="text-[10px] uppercase font-mono font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
-                <Database className="w-3 h-3 text-emerald-400" />
-                ACTUAL DATA (RETAIL DATASET)
+              <span className="text-xs font-mono font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+                <Database className="w-3.5 h-3.5 text-emerald-400" />
+                ACTUAL DATA (RETAIL SALES)
               </span>
             )}
             {historyProvenance?.dataSource === 'deterministic_demo' && (
-              <span className="text-[10px] uppercase font-mono font-bold bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded border border-purple-500/30 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-purple-400" />
-                DETERMINISTIC SIMULATION
+              <span className="text-xs font-mono font-bold bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded border border-purple-500/30 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                DEMO ESTIMATE
               </span>
             )}
             {currentItem?.dataSource === 'postgresql_live' && (
-              <span className="text-[10px] uppercase font-mono font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
-                <AlertCircle className="w-3 h-3 text-amber-400" />
-                POSTGRESQL LIVE ITEM
+              <span className="text-xs font-mono font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                DATABASE ITEM
               </span>
             )}
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Deterministic Bayesian demand forecasting, multi-horizon stockout velocity modeling, and commodity spot pricing trends.
+            Estimates expected customer demand over {forecastHorizon} days. Forecasts are estimates based on statistical models, not guaranteed future outcomes.
           </p>
         </div>
 
@@ -702,7 +715,7 @@ export const ForecastView: React.FC = () => {
                     : 'text-slate-400 hover:text-white hover:bg-white/5 disabled:opacity-50'
                 }`}
               >
-                {h} Days
+                Next {h} days
               </button>
             ))}
           </div>
@@ -723,15 +736,15 @@ export const ForecastView: React.FC = () => {
 
       {/* Date Horizon Range Banner */}
       {forecastResponse?.startDate && forecastResponse?.endDate && (
-        <div className="flex items-center justify-between text-xs px-4 py-2 rounded-xl bg-slate-900/40 border border-white/5 text-slate-300">
+        <div className="flex items-center justify-between text-xs px-4 py-2.5 rounded-xl bg-slate-900/40 border border-white/5 text-slate-300">
           <div className="flex items-center gap-2 font-mono">
             <Calendar className="w-4 h-4 text-cyan-400" />
             <span>
               Forecast Window: <strong>{forecastResponse.startDate}</strong> &rarr; <strong>{forecastResponse.endDate}</strong> ({forecastHorizon} Daily Calendar Projections)
             </span>
           </div>
-          <span className="text-[11px] text-slate-500 font-mono">
-            Granularity: {forecastResponse.granularity || 'Daily'} &bull; Confidence: 95%
+          <span className="text-xs text-slate-400 font-mono">
+            Granularity: {forecastResponse.granularity || 'Daily'} &bull; 95% Confidence Bounds
           </span>
         </div>
       )}
@@ -742,7 +755,7 @@ export const ForecastView: React.FC = () => {
           <div className="flex items-center gap-2">
             <Boxes className="w-5 h-5 text-cyan-400 shrink-0" />
             <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-              Selected Inventory SKU:
+              Selected Inventory Product:
             </span>
             <select
               value={selectedSku}
@@ -762,7 +775,7 @@ export const ForecastView: React.FC = () => {
 
           {currentItem && (
             <div className="flex items-center gap-3 text-xs font-mono text-slate-300 flex-wrap">
-              <span className="text-slate-400">Facility:</span>
+              <span className="text-slate-400">Warehouse:</span>
               <span className="text-white font-semibold">{currentItem.warehouse}</span>
               <span className="text-slate-600">|</span>
               <span className="text-slate-400">Category:</span>
@@ -782,12 +795,14 @@ export const ForecastView: React.FC = () => {
             <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
             <div className="space-y-0.5">
               <div className="font-bold text-amber-100 text-sm">
-                Live PostgreSQL Database Item: Insufficient Historical Customer Demand Observations
+                Not Enough Historical Sales Data
               </div>
-              <p className="text-amber-200/90 leading-relaxed">{skuDataWarning}</p>
+              <p className="text-amber-200/90 leading-relaxed text-xs sm:text-sm">
+                This product exists in the database, but there are not enough recorded sales to generate a reliable forecast. Add historical sales records or select a product with verified sales history.
+              </p>
             </div>
           </div>
-          <div className="flex items-center justify-between pt-2 border-t border-amber-500/20 text-[11px] font-mono">
+          <div className="flex items-center justify-between pt-2 border-t border-amber-500/20 text-xs font-mono">
             <span>
               Registered On-Hand Inventory: <strong>{currentItem?.currentStock ?? 0} units</strong> in {currentItem?.warehouse}
             </span>
@@ -798,7 +813,7 @@ export const ForecastView: React.FC = () => {
                   soundFX.playClick();
                   setSelectedSku('P0001');
                 }}
-                className="px-2.5 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold hover:bg-cyan-500/30 cursor-pointer transition-all"
+                className="px-2.5 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold hover:bg-cyan-500/30 cursor-pointer transition-all text-xs"
               >
                 P0001 (Actual Retail Data)
               </button>
@@ -830,45 +845,41 @@ export const ForecastView: React.FC = () => {
         {/* Card 1: Current Daily Demand */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Current Demand</span>
-            <Clock className="w-4 h-4 text-blue-400" />
+            <span className="text-xs font-medium text-slate-300">Current Demand</span>
+            <Tooltip content="What it means: The average number of units sold per day over the last 14 days. Why it matters: Establishes the baseline rate at which stock is being depleted. What to watch: Large unexpected drops or spikes." />
           </div>
           <div className="text-2xl font-bold font-mono text-white">
-            {kpis.currentDailyDemand.toLocaleString()} <span className="text-xs text-slate-400 font-normal">u/day</span>
+            {Math.round(kpis.currentDailyDemand).toLocaleString()} <span className="text-xs text-slate-400 font-normal">u/day</span>
           </div>
-          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+          <div className="text-xs text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
             Recent 14-day trailing average
           </div>
         </div>
 
-        {/* Card 2: Forecasted Total Demand */}
+        {/* Card 2: Expected Demand */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Forecasted Demand</span>
-            <TrendingUp className="w-4 h-4 text-purple-400" />
+            <span className="text-xs font-medium text-slate-300">Expected Demand</span>
+            <Tooltip content={`What it means: Total units predicted to be ordered over the selected ${forecastHorizon}-day horizon. Why it matters: Guides production quantities and purchase orders. What to watch: Whether expected demand exceeds available stock.`} />
           </div>
           <div className="text-2xl font-bold font-mono text-purple-300">
-            {kpis.forecastTotalDemand.toLocaleString()} <span className="text-xs text-slate-400 font-normal">units</span>
+            {Math.round(kpis.forecastTotalDemand).toLocaleString()} <span className="text-xs text-slate-400 font-normal">units</span>
           </div>
-          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
-            {forecastHorizon}-Day total ({kpis.forecastDailyAvg} u/day)
+          <div className="text-xs text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+            {forecastHorizon}-Day total ({Math.round(kpis.forecastDailyAvg)} u/day)
           </div>
         </div>
 
-        {/* Card 3: Expected Demand Change */}
+        {/* Card 3: Expected Change in Demand */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Expected Demand Shift</span>
-            {kpis.demandShiftPct >= 0 ? (
-              <TrendingUp className="w-4 h-4 text-rose-400" />
-            ) : (
-              <TrendingDown className="w-4 h-4 text-emerald-400" />
-            )}
+            <span className="text-xs font-medium text-slate-300">Expected Demand Shift</span>
+            <Tooltip content="What it means: How much future daily demand is predicted to rise or fall compared to recent sales. Why it matters: A negative shift signals declining demand; a positive shift signals growth or seasonal surges. What to watch: Shifts exceeding 20% require re-evaluating safety stock." />
           </div>
           <div className={`text-2xl font-bold font-mono ${kpis.demandShiftPct >= 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
             {kpis.demandShiftPct >= 0 ? `+${kpis.demandShiftPct}%` : `${kpis.demandShiftPct}%`}
           </div>
-          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+          <div className="text-xs text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
             Compared to historical baseline
           </div>
         </div>
@@ -876,43 +887,43 @@ export const ForecastView: React.FC = () => {
         {/* Card 4: Current On-Hand Inventory */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Current Stock</span>
-            <Boxes className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs font-medium text-slate-300">Current Stock</span>
+            <Tooltip content="What it means: Physical inventory units currently stored in the warehouse. Why it matters: Determines immediate order fulfillment capacity. What to watch: Stock dropping below safety stock levels." />
           </div>
           <div className="text-2xl font-bold font-mono text-cyan-300">
-            {kpis.currentStock.toLocaleString()} <span className="text-xs text-slate-400 font-normal">units</span>
+            {Math.round(kpis.currentStock).toLocaleString()} <span className="text-xs text-slate-400 font-normal">units</span>
           </div>
-          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+          <div className="text-xs text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
             {currentItem?.warehouse || 'Warehouse'}
           </div>
         </div>
 
-        {/* Card 5: Days of Inventory Remaining */}
+        {/* Card 5: Stock Remaining (Days) */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Days of Inventory</span>
-            <PackageCheck className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-medium text-slate-300">Stock Remaining</span>
+            <Tooltip content={`What it means: How many days current stock can support demand at estimated daily usage. Why it matters: If days of stock fall below supplier lead time (${leadTimeDays} days), a stockout is imminent without immediate reorders. What to watch: Any value under ${leadTimeDays} days.`} />
           </div>
           <div className="text-2xl font-bold font-mono text-emerald-300">
             {kpis.daysOfSupply} <span className="text-xs text-slate-400 font-normal">days</span>
           </div>
-          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
-            Lead time: {leadTimeDays}d cycle
+          <div className="text-xs text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+            Supplier lead time: {leadTimeDays}d cycle
           </div>
         </div>
 
-        {/* Card 6: Projected Stockout Risk */}
+        {/* Card 6: Risk of Running Out of Stock */}
         <div className="rounded-2xl glass-panel border border-white/10 p-4 space-y-1 relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Projected Stockout Risk</span>
-            <ShieldAlert className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-medium text-slate-300">Stockout Risk</span>
+            <Tooltip content="What it means: Indicates the possibility of running out of stock before the next replenishment arrives. Why it matters: Stockouts mean lost customer sales and SLA penalties. What to watch: Triggered reorders or critical warnings." />
           </div>
           <div className="pt-1">
             <NeonBadge variant={kpis.stockoutRiskVariant} size="sm">
               {kpis.stockoutRiskText}
             </NeonBadge>
           </div>
-          <div className="text-[11px] text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
+          <div className="text-xs text-slate-400 font-mono-telemetry pt-1 border-t border-white/5 truncate">
             Over {forecastHorizon}-day horizon
           </div>
         </div>
@@ -921,19 +932,18 @@ export const ForecastView: React.FC = () => {
       {/* Main Chart 1: Global Demand Forecast & Multi-Horizon Prediction */}
       <GlassCard
         title={`Finished Goods Demand Projection (${forecastHorizon}-Day Calendar Horizon)`}
-        subtitle={
-          forecastResponse?.algorithm ||
-          'Bayesian additive time-series forecasting with genuine 95% confidence bounds'
-        }
+        subtitle="Estimates daily customer demand with statistical upper and lower uncertainty ranges. Projections are estimates, not guaranteed outcomes."
         badge={
-          <div className="flex items-center gap-1.5 text-xs text-purple-300 bg-purple-500/10 border border-purple-400/30 px-2.5 py-0.5 rounded-full">
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            <span>
-              {forecastResponse?.metrics?.wape !== undefined && forecastResponse?.metrics?.wape !== null
-                ? `Holdout WAPE: ${forecastResponse.metrics.wape}%`
-                : '95% Prediction Bounds'}
-            </span>
-          </div>
+          <Tooltip content="WAPE measures how far predictions differ from actual demand. Lower values generally indicate better forecasts.">
+            <div className="flex items-center gap-1.5 text-xs text-purple-300 bg-purple-500/10 border border-purple-400/30 px-2.5 py-0.5 rounded-full cursor-help">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span>
+                {forecastResponse?.metrics?.wape !== undefined && forecastResponse?.metrics?.wape !== null
+                  ? `Forecast Error (WAPE): ${forecastResponse.metrics.wape}%`
+                  : '95% Forecast Range'}
+              </span>
+            </div>
+          </Tooltip>
         }
       >
         <div className="relative h-80 w-full">
@@ -993,19 +1003,28 @@ export const ForecastView: React.FC = () => {
               <span className="font-mono text-purple-300">{forecastResponse?.modelVersion || 'prophet-daily-v1'}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span className="text-slate-400">Comparative Baseline:</span>
-              <span className="font-semibold text-slate-300">AutoRegressive (AR-7) + Linear Trend</span>
+              <span className="text-slate-400 flex items-center gap-1">
+                <span>Comparative Baseline:</span>
+                <Tooltip content="Simple 7-day average used as a benchmark to confirm the advanced forecasting model provides superior accuracy." />
+              </span>
+              <span className="font-semibold text-slate-300">Reference Baseline (7-Day Average)</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-white/5">
               <span className="text-slate-400">Horizon & Granularity:</span>
               <span className="font-mono text-cyan-300">{forecastHorizon} Days &bull; Daily</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span className="text-slate-400">Holdout Backtest Split:</span>
+              <span className="text-slate-400 flex items-center gap-1">
+                <span>Evaluation Split:</span>
+                <Tooltip content="Chronological backtest split where earlier data is trained and later data is tested to verify prediction accuracy." />
+              </span>
               <span className="font-mono text-slate-300">{forecastResponse?.metrics?.evaluation_split || 'Chronological Holdout'}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span className="text-slate-400">Holdout WAPE Error:</span>
+              <span className="text-slate-400 flex items-center gap-1">
+                <span>Forecast Error (WAPE):</span>
+                <Tooltip content="WAPE measures how far predictions differ from actual demand. Lower values generally indicate better forecasts." />
+              </span>
               <span className="font-mono font-bold text-amber-300">
                 {forecastResponse?.metrics?.wape !== undefined && forecastResponse?.metrics?.wape !== null
                   ? `${forecastResponse.metrics.wape.toFixed(1)}%`
@@ -1013,7 +1032,10 @@ export const ForecastView: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-white/5">
-              <span className="text-slate-400">Mean Absolute Error (MAE):</span>
+              <span className="text-slate-400 flex items-center gap-1">
+                <span>Mean Absolute Error (MAE):</span>
+                <Tooltip content="Average difference between predicted and actual demand in physical units." />
+              </span>
               <span className="font-mono text-white">
                 {forecastResponse?.metrics?.mae !== undefined && forecastResponse?.metrics?.mae !== null
                   ? `${forecastResponse.metrics.mae.toFixed(1)} units`
@@ -1021,7 +1043,10 @@ export const ForecastView: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between items-center py-1">
-              <span className="text-slate-400">Root Mean Squared Error (RMSE):</span>
+              <span className="text-slate-400 flex items-center gap-1">
+                <span>Root Mean Squared Error (RMSE):</span>
+                <Tooltip content="Statistical measure of prediction error giving higher penalty to larger mistakes." />
+              </span>
               <span className="font-mono text-white">
                 {forecastResponse?.metrics?.rmse !== undefined && forecastResponse?.metrics?.rmse !== null
                   ? `${forecastResponse.metrics.rmse.toFixed(1)} units`

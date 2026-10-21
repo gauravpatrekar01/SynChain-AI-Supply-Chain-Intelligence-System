@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../common/Button';
 import { NeonBadge } from '../common/NeonBadge';
+import { Tooltip } from '../common/Tooltip';
 import { RiskDetailModal } from './RiskDetailModal';
 import { SimulationModal } from './SimulationModal';
 import { apiService } from '../../services/api';
@@ -365,75 +366,95 @@ export const AnalysisView: React.FC = () => {
         {/* Metric 1: Total Shipments */}
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-blue-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[11px] uppercase tracking-wider font-semibold">Total Shipments</span>
-            <Truck className="w-4 h-4 text-blue-400" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold truncate">Total Shipments</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <Truck className="w-4 h-4 text-blue-400" />
+              <Tooltip content="Total active shipments currently managed in the freight tracking system across ocean, air, rail, and road corridors." />
+            </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-white font-mono">
-            {isLoading ? '...' : overview?.kpis.total_shipments ?? 0}
+            {isLoading ? '...' : overview?.kpis.total_shipments !== undefined ? overview.kpis.total_shipments : '—'}
           </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Live operational freight</span>
+          <span className="text-[10px] text-slate-400 mt-1 block truncate">Active consignments</span>
         </div>
 
         {/* Metric 2: Delayed Shipments */}
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-rose-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[11px] uppercase tracking-wider font-semibold">Delayed Shipments</span>
-            <Clock className="w-4 h-4 text-rose-400" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold truncate">Delayed Shipments</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <Clock className="w-4 h-4 text-rose-400" />
+              <Tooltip content="Shipments whose current expected arrival date has slipped past the original agreed delivery date." />
+            </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-rose-400 font-mono">
-            {isLoading ? '...' : overview?.kpis.delayed_shipments ?? 0}
+            {isLoading ? '...' : overview?.kpis.delayed_shipments !== undefined ? overview.kpis.delayed_shipments : '—'}
           </div>
-          <span className="text-[10px] text-rose-300/80 mt-1 block">Past scheduled delivery</span>
+          <span className="text-[10px] text-rose-300/80 mt-1 block truncate">Past scheduled delivery date</span>
         </div>
 
         {/* Metric 3: High-Risk Shipments */}
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-amber-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[11px] uppercase tracking-wider font-semibold">High-Risk Freight</span>
-            <ShieldAlert className="w-4 h-4 text-amber-400" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold truncate">High-Risk Shipments</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+              <Tooltip content="Shipments whose multi-factor risk score is 60 or above out of 100, combining carrier delays, weather, and supplier reliability." />
+            </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-amber-400 font-mono">
-            {isLoading ? '...' : overview?.kpis.high_risk_shipments ?? 0}
+            {isLoading ? '...' : overview?.kpis.high_risk_shipments !== undefined ? overview.kpis.high_risk_shipments : '—'}
           </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Risk score &gt;= 60</span>
+          <span className="text-[10px] text-slate-400 mt-1 block truncate">Risk score ≥ 60/100</span>
         </div>
 
         {/* Metric 4: Active Suppliers */}
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-emerald-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[11px] uppercase tracking-wider font-semibold">Active Suppliers</span>
-            <Building2 className="w-4 h-4 text-emerald-400" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold truncate">Active Suppliers</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <Building2 className="w-4 h-4 text-emerald-400" />
+              <Tooltip content="Total verified Tier-1 and Tier-2 suppliers currently active in procurement contracts." />
+            </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-white font-mono">
-            {isLoading ? '...' : overview?.kpis.active_suppliers ?? 0}
+            {isLoading ? '...' : overview?.kpis.active_suppliers !== undefined ? overview.kpis.active_suppliers : '—'}
           </div>
-          <span className="text-[10px] text-emerald-400/80 mt-1 block">
-            Avg Rel: {overview?.kpis.average_supplier_reliability ?? 0}%
+          <span className="text-[10px] text-emerald-400/80 mt-1 block truncate">
+            {overview?.kpis.average_supplier_reliability !== undefined
+              ? `Avg Reliability: ${overview.kpis.average_supplier_reliability}%`
+              : 'Supplier health score'}
           </span>
         </div>
 
         {/* Metric 5: Below Safety Stock */}
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-purple-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[11px] uppercase tracking-wider font-semibold">Below Safety</span>
-            <Package className="w-4 h-4 text-purple-400" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold truncate">Below Safety Stock</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <Package className="w-4 h-4 text-purple-400" />
+              <Tooltip content="Number of products whose physical inventory has fallen below the safety stock threshold needed to protect against supply disruptions." />
+            </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-purple-400 font-mono">
-            {isLoading ? '...' : overview?.kpis.products_below_safety_stock ?? 0}
+            {isLoading ? '...' : overview?.kpis.products_below_safety_stock !== undefined ? overview.kpis.products_below_safety_stock : '—'}
           </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Buffer threshold breached</span>
+          <span className="text-[10px] text-slate-400 mt-1 block truncate">Reserve buffer breached</span>
         </div>
 
-        {/* Metric 6: At Risk of Stockout */}
+        {/* Metric 6: Potential Stock Shortage */}
         <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/10 hover:border-rose-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-[11px] uppercase tracking-wider font-semibold">Stockout Exposure</span>
-            <TrendingDown className="w-4 h-4 text-rose-400" />
+            <span className="text-[11px] uppercase tracking-wider font-semibold truncate">Potential Shortage</span>
+            <div className="flex items-center gap-1 shrink-0">
+              <TrendingDown className="w-4 h-4 text-rose-400" />
+              <Tooltip content="Products at risk of stockout with 5 days or fewer of inventory remaining based on recent sales demand." />
+            </div>
           </div>
           <div className="text-xl sm:text-2xl font-bold text-rose-400 font-mono">
-            {isLoading ? '...' : overview?.kpis.products_at_risk_of_stockout ?? 0}
+            {isLoading ? '...' : overview?.kpis.products_at_risk_of_stockout !== undefined ? overview.kpis.products_at_risk_of_stockout : '—'}
           </div>
-          <span className="text-[10px] text-rose-300/80 mt-1 block">&lt;= 5 days of inventory</span>
+          <span className="text-[10px] text-rose-300/80 mt-1 block truncate">≤ 5 days stock remaining</span>
         </div>
       </div>
 

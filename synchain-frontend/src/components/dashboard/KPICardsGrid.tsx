@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { KPIMetric } from '../../types';
 import { AnimatedCounter } from '../common/AnimatedCounter';
+import { Tooltip } from '../common/Tooltip';
 import { soundFX } from '../../services/audioService';
 
 interface KPICardsGridProps {
@@ -70,6 +71,22 @@ export const KPICardsGrid: React.FC<KPICardsGridProps> = ({ metrics, onCardClick
     );
   };
 
+  const getKpiTooltip = (kpiId: string) => {
+    switch (kpiId) {
+      case 'kpi-risk':
+        return 'What it means: A composite score (0-100) combining likelihood and severity of problems across nodes. Why it matters: Higher scores indicate greater vulnerability. What to watch: Scores above 50 require mitigation.';
+      case 'kpi-disruptions':
+        return 'What it means: Count of active supplier delays, port blockages, or facility outages. Why it matters: Directly impacts order fulfillment timelines. What to watch: Problems exceeding safety stock buffers.';
+      case 'kpi-inventory':
+        return 'What it means: Real-time dollar value of all finished goods and components in warehouses. Why it matters: Balances order fulfillment against holding costs. What to watch: Unsold inventory accumulation.';
+      case 'kpi-suppliers':
+        return 'What it means: Rating of suppliers based on delivery consistency and product quality. Why it matters: Reliable suppliers prevent unexpected line shutdowns. What to watch: Ratings below 80%.';
+      case 'kpi-otd':
+      default:
+        return 'What it means: Percentage of customer orders delivered on or before the promised date. Why it matters: Core service level and customer satisfaction metric. What to watch: Any dip below the 90% SLA target.';
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {metrics.map((kpi, idx) => {
@@ -110,10 +127,15 @@ export const KPICardsGrid: React.FC<KPICardsGridProps> = ({ metrics, onCardClick
 
             {/* Value Counter */}
             <div className="space-y-1">
-              <p className="text-xs font-medium text-slate-400 group-hover:text-slate-300 transition-colors">
-                {kpi.title}
-              </p>
-              <div className="text-2xl font-bold text-white tracking-tight flex items-baseline">
+              <div className="flex items-center justify-between gap-1">
+                <p className="text-xs sm:text-sm font-semibold text-slate-300 group-hover:text-white transition-colors truncate">
+                  {kpi.title}
+                </p>
+                <div onClick={(e) => e.stopPropagation()}>
+                  <Tooltip content={getKpiTooltip(kpi.id)} iconSize={13} />
+                </div>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-baseline">
                 <AnimatedCounter
                   value={numericVal}
                   prefix={kpi.prefix}
@@ -125,7 +147,7 @@ export const KPICardsGrid: React.FC<KPICardsGridProps> = ({ metrics, onCardClick
             </div>
 
             {/* Subtext description */}
-            <p className="mt-2 text-[11px] text-slate-400 line-clamp-1 group-hover:text-slate-300 transition-colors">
+            <p className="mt-2 text-xs text-slate-400 line-clamp-2 leading-relaxed group-hover:text-slate-300 transition-colors">
               {kpi.description}
             </p>
 

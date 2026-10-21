@@ -39,7 +39,8 @@ CANONICAL_SCHEMA: Dict[str, Dict[str, Any]] = {
         "label": "Quantity",
         "description": "Current inventory, batch count, or order volume",
         "aliases": [
-            "quantity", "qty", "stock_quantity", "stockquantity",
+            "quantity", "qty", "stock_quantity", "stockquantity", "current_stock", "currentstock",
+            "stock_level", "inventory_count",
             "available_quantity", "available_qty", "actual_qty", "actual_quantity",
             "stock", "units", "inventory_level", "on_hand", "balance_qty", "count"
         ]
@@ -65,6 +66,7 @@ CANONICAL_SCHEMA: Dict[str, Dict[str, Any]] = {
         "description": "Origin warehouse, facility, depot, or origin city",
         "aliases": [
             "source_location", "sourcelocation", "warehouse", "warehouse_name",
+            "warehouse_id", "warehouseid", "warehouse_code", "facility_id", "wh_id",
             "location", "origin", "from", "from_location", "facility",
             "site", "source", "wh_name", "source_city", "depot"
         ]
@@ -74,7 +76,8 @@ CANONICAL_SCHEMA: Dict[str, Dict[str, Any]] = {
         "description": "Receiving warehouse, customer port, or destination city",
         "aliases": [
             "destination", "dest", "to", "to_location", "delivery_location",
-            "ship_to", "target_location", "destination_city", "recipient"
+            "dest_warehouse", "destination_warehouse", "destination_city", "target_warehouse",
+            "ship_to", "target_location", "recipient"
         ]
     },
     "order_id": {
@@ -82,7 +85,7 @@ CANONICAL_SCHEMA: Dict[str, Dict[str, Any]] = {
         "description": "Purchase or sales order identifier",
         "aliases": [
             "order_id", "orderid", "po_number", "ponumber", "order_number",
-            "ordernumber", "order_no", "orderno", "purchase_order",
+            "ordernumber", "order_no", "orderno", "transaction_id", "purchase_order",
             "sales_order", "document_no", "ref_no"
         ]
     },
@@ -90,8 +93,9 @@ CANONICAL_SCHEMA: Dict[str, Dict[str, Any]] = {
         "label": "Shipment / Tracking ID",
         "description": "Tracking number, consignment, or bill of lading ID",
         "aliases": [
-            "shipment_id", "shipmentid", "tracking_number", "tracking_id",
-            "consignment_no", "waybill", "bol_number", "shipment_no", "awb"
+            "shipment_id", "shipmentid", "tracking_number", "tracking_id", "tracking_no",
+            "consignment_no", "consignment_number", "waybill", "waybill_no", "bol_number",
+            "shipment_no", "awb"
         ]
     },
     "order_date": {
@@ -99,7 +103,7 @@ CANONICAL_SCHEMA: Dict[str, Dict[str, Any]] = {
         "description": "Date when the order or transaction was created",
         "aliases": [
             "order_date", "orderdate", "po_date", "podate", "created_date",
-            "date", "transaction_date", "doc_date"
+            "date", "transaction_date", "doc_date", "observation_date"
         ]
     },
     "expected_delivery": {
@@ -125,6 +129,50 @@ CANONICAL_SCHEMA: Dict[str, Dict[str, Any]] = {
         "aliases": [
             "status", "order_status", "orderstatus", "state", "health_status",
             "shipment_status", "condition"
+        ]
+    },
+    "daily_demand": {
+        "label": "Daily Demand Rate",
+        "description": "Average or observed daily product consumption rate",
+        "aliases": [
+            "daily_demand", "dailydemand", "average_daily_demand", "demand_rate",
+            "demand_per_day", "daily_sales", "demand"
+        ]
+    },
+    "safety_stock": {
+        "label": "Safety Stock Threshold",
+        "description": "Buffer stock quantity maintained to prevent stockouts",
+        "aliases": [
+            "safety_stock", "safetystock", "safety_stock_level", "buffer_stock", "min_stock"
+        ]
+    },
+    "reorder_level": {
+        "label": "Reorder Level / Point",
+        "description": "Inventory threshold triggering replenishment",
+        "aliases": [
+            "reorder_level", "reorderlevel", "reorder_point", "reorderpoint", "replenishment_point"
+        ]
+    },
+    "lead_time_days": {
+        "label": "Lead Time (Days)",
+        "description": "Supplier manufacturing or logistics lead time in days",
+        "aliases": [
+            "lead_time_days", "lead_time", "leadtime", "baseline_lead_time_days",
+            "planned_lead_time_days", "lead_times", "shipping_times"
+        ]
+    },
+    "carrier": {
+        "label": "Freight Carrier",
+        "description": "Transportation or freight logistics provider",
+        "aliases": [
+            "carrier", "carrier_name", "shipping_carrier", "shipping_carriers", "transporter"
+        ]
+    },
+    "transport_mode": {
+        "label": "Transport Mode",
+        "description": "Shipping method (Ocean, Air, Ground, Rail)",
+        "aliases": [
+            "transport_mode", "shipping_mode", "transportation_mode", "transportation_modes", "mode"
         ]
     }
 }

@@ -43,9 +43,47 @@ class ScenarioConfigOption(BaseModel):
     country: Optional[str] = None
     unit_cost_usd: Optional[float] = None
     stock_on_hand: Optional[int] = None
+    daily_demand: Optional[float] = None
+    safety_stock: Optional[int] = None
+    source_supplier_id: Optional[str] = None
+    source_supplier_name: Optional[str] = None
+    source_warehouse_name: Optional[str] = None
+    source_address: Optional[str] = None
+    destination_warehouse_name: Optional[str] = None
+    destination_address: Optional[str] = None
+    carrier_name: Optional[str] = None
+    transport_mode: Optional[str] = None
+    shipment_id: Optional[str] = None
+    shipment_status: Optional[str] = None
+    organization_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    import_id: Optional[str] = None
+    organization_ids: Optional[List[str]] = None
+    has_alternative_supplier: Optional[bool] = None
+
+
+class ProductStrategyEligibility(BaseModel):
+    strategy_id: str
+    strategy_name: str
+    is_eligible: bool
+    reason: str
+    prerequisites: Optional[str] = None
+
+
+class ProductRecommendationSummary(BaseModel):
+    sku: str
+    product_name: str
+    organization_id: Optional[str] = None
+    organization_name: Optional[str] = None
+    is_data_complete: bool = True
+    missing_fields: List[str] = Field(default_factory=list)
+    eligible_strategies: List[ProductStrategyEligibility] = Field(default_factory=list)
+    active_recommendations: List[Dict[str, Any]] = Field(default_factory=list)
+    next_required_action: str
 
 
 class ScenarioConfigOptionsResponse(BaseModel):
+    organizations: List[Dict[str, Any]] = Field(default_factory=list)
     products: List[ScenarioConfigOption]
     suppliers: List[ScenarioConfigOption]
     warehouses: List[ScenarioConfigOption]
@@ -103,6 +141,16 @@ class ScenarioSimulationRequest(BaseModel):
     alternative_supplier_name: Optional[str] = Field(default=None, description="Alternative supplier display name")
     alternative_lead_time_days: Optional[int] = Field(default=None, ge=1, description="Alternative supplier lead time")
     alternative_unit_cost_usd: Optional[float] = Field(default=None, ge=0, description="Alternative supplier unit cost")
+
+    # Organization & Route Context
+    organization_id: Optional[str] = Field(default=None, description="Selected organization / division identifier")
+    organization_name: Optional[str] = Field(default=None, description="Selected organization display name")
+    source_warehouse_name: Optional[str] = Field(default=None, description="Source warehouse name")
+    source_address: Optional[str] = Field(default=None, description="Source address or location")
+    destination_warehouse_name: Optional[str] = Field(default=None, description="Destination warehouse or facility")
+    destination_address: Optional[str] = Field(default=None, description="Destination address or location")
+    carrier_name: Optional[str] = Field(default=None, description="Carrier name")
+    transport_mode: Optional[str] = Field(default=None, description="Transport mode")
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +288,8 @@ class ScenarioSimulationResponse(BaseModel):
     recommendation_rationale: str
     
     # Explainability & Evidence
+    organization_name: Optional[str] = "Global Supply Chain Enterprise"
+    route_details: Optional[Dict[str, Any]] = None
     affected_entities: AffectedEntitySummary
     calculation_transparency: Dict[str, MetricCalculationDetail]
     data_provenance: DataProvenance

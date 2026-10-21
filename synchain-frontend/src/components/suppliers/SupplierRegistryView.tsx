@@ -137,75 +137,32 @@ export const SupplierRegistryView: React.FC = () => {
           </p>
         </div>
 
-        {/* Import Suppliers Dropdown Button */}
-        <div className="flex items-center gap-3">
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => {
-                soundFX.playClick();
-                setIsDropdownOpen(!isDropdownOpen);
-              }}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all flex items-center gap-2 cursor-pointer border border-blue-400/30"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Import Suppliers</span>
-              <ChevronDown
-                className={`w-4 h-4 transition-transform duration-200 ${
-                  isDropdownOpen ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
+        {/* Primary and Secondary Action Buttons */}
+        <div className="flex items-center gap-2.5">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              soundFX.playClick();
+              setIsImportModalOpen(true);
+            }}
+          >
+            <Upload className="w-3.5 h-3.5 mr-1.5" />
+            Import CSV
+          </Button>
 
-            {/* Dropdown Options */}
-            {isDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-72 rounded-2xl glass-dropdown border border-blue-500/30 shadow-[0_10px_40px_rgba(0,0,0,0.6)] py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                <button
-                  onClick={() => {
-                    soundFX.playClick();
-                    setIsDropdownOpen(false);
-                    setIsImportModalOpen(true);
-                  }}
-                  className="w-full px-4 py-3 text-left hover:bg-blue-600/15 transition-colors flex items-start gap-3 cursor-pointer group"
-                >
-                  <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 group-hover:bg-blue-500/20 group-hover:text-blue-300 shrink-0">
-                    <Upload className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-semibold text-white block group-hover:text-blue-200">
-                      Import Suppliers from CSV
-                    </span>
-                    <span className="text-[11px] text-slate-400 mt-0.5 block leading-tight">
-                      Bulk upload with template generator, preview validation & duplicate detection.
-                    </span>
-                  </div>
-                </button>
-
-                <div className="my-1 border-t border-white/5" />
-
-                <button
-                  onClick={() => {
-                    soundFX.playClick();
-                    setIsDropdownOpen(false);
-                    setSupplierToEdit(null);
-                    setIsFormModalOpen(true);
-                  }}
-                  className="w-full px-4 py-3 text-left hover:bg-indigo-600/15 transition-colors flex items-start gap-3 cursor-pointer group"
-                >
-                  <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 group-hover:bg-indigo-500/20 group-hover:text-indigo-300 shrink-0">
-                    <UserPlus className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-semibold text-white block group-hover:text-indigo-200">
-                      Add Supplier Manually
-                    </span>
-                    <span className="text-[11px] text-slate-400 mt-0.5 block leading-tight">
-                      Register a single vendor with custom contact, tier, and resilience data.
-                    </span>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              soundFX.playClick();
+              setSupplierToEdit(null);
+              setIsFormModalOpen(true);
+            }}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1.5" />
+            Add Supplier
+          </Button>
         </div>
       </div>
 

@@ -5,9 +5,10 @@ import logging
 import hashlib
 import json
 import time
+import tempfile
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union, Set
 from pathlib import Path
 
 from fastapi import UploadFile, HTTPException, status
@@ -23,6 +24,8 @@ from app.models.postgres.models import (
     Inventory,
     Order,
     OrderItem,
+    Shipment,
+    SalesTransaction,
     User,
 )
 from app.models.postgres.observations import (
@@ -67,10 +70,65 @@ def _sanitize_filename(filename: str) -> str:
 
 class IngestionService:
     @staticmethod
-    def _get_staged_file_path(import_id: str) -> Optional[Path]:
-        temp_dir = _ensure_temp_dir()
-        matches = list(temp_dir.glob(f"{import_id}_*"))
-        return matches[0] if matches else None
+    def _get_staged_file_path(
+        import_id: Union[str, uuid.UUID],
+        filename: Optional[str] = None
+    ) -> Optional[Path]:
+        """
+        Locates the staged file corresponding to import_id.
+        Checks exact filename match, underscore-prefix glob, broad glob,
+        and fallback directory locations.
+        """
+        clean_id = str(import_id).strip()
+        id_variants = [clean_id]
+        clean_no_dashes = clean_id.replace("-", "")
+        if clean_no_dashes != clean_id:
+            id_variants.append(clean_no_dashes)
+
+        search_dirs = [
+            _ensure_temp_dir(),
+            Path(__file__).resolve().parent.parent.parent / "storage" / "uploads_temp",
+            Path.cwd() / "backend" / "storage" / "uploads_temp",
+            Path.cwd() / "storage" / "uploads_temp",
+            Path(tempfile.gettempdir()) / "synchain_uploads",
+        ]
+        unique_dirs: List[Path] = []
+        for d in search_dirs:
+            resolved = d.resolve()
+            if resolved not in unique_dirs:
+                unique_dirs.append(resolved)
+
+        for temp_dir in unique_dirs:
+            if not temp_dir.exists():
+                continue
+
+            for cid in id_variants:
+                # 1. Direct candidate matching if filename is provided
+                if filename:
+                    sanitized = _sanitize_filename(filename)
+                    candidates = [
+                        temp_dir / f"{cid}_{sanitized}",
+                        temp_dir / f"{cid}_{filename}",
+                        temp_dir / f"{cid}.csv",
+                        temp_dir / f"{cid}.xlsx",
+                        temp_dir / f"{cid}.xls",
+                        temp_dir / f"{cid}.upload",
+                    ]
+                    for candidate in candidates:
+                        if candidate.exists() and candidate.is_file():
+                            return candidate
+
+                # 2. Glob matching for {cid}_*
+                matches = [f for f in temp_dir.glob(f"{cid}_*") if f.is_file()]
+                if matches:
+                    return matches[0]
+
+                # 3. Broad glob matching for {cid}*
+                broad_matches = [f for f in temp_dir.glob(f"{cid}*") if f.is_file()]
+                if broad_matches:
+                    return broad_matches[0]
+
+        return None
 
     @classmethod
     async def upload_and_stage(
@@ -211,9 +269,34 @@ class IngestionService:
         if not data_import:
             raise HTTPException(status_code=404, detail="Import session not found")
 
-        staged_path = cls._get_staged_file_path(import_id)
+        staged_path = cls._get_staged_file_path(import_id, data_import.filename)
         if not staged_path or not staged_path.exists():
-            raise HTTPException(status_code=404, detail="Staged file expired or not found")
+            if data_import.status == "completed":
+                records = db.query(ImportedRecord).filter(
+                    ImportedRecord.import_id == data_import.id
+                ).order_by(ImportedRecord.row_number).limit(15).all()
+                preview_rows = [r.raw_data for r in records]
+                headers = data_import.columns_detected or []
+                auto_mapping = data_import.column_mapping or auto_map_columns(headers)
+                return {
+                    "import_id": str(data_import.id),
+                    "filename": data_import.filename,
+                    "file_type": data_import.file_type,
+                    "source_type": data_import.source_type,
+                    "sheets": [],
+                    "selected_sheet": None,
+                    "columns_detected": headers,
+                    "auto_mapping": auto_mapping,
+                    "canonical_schema": CANONICAL_SCHEMA,
+                    "rows_detected": data_import.rows_total or len(preview_rows),
+                    "preview_rows": preview_rows,
+                    "status": data_import.status,
+                    "already_completed": True
+                }
+            raise HTTPException(
+                status_code=404,
+                detail=f"Staged file not found for session {import_id}. The upload may have expired or been removed. Please re-upload your CSV file to continue."
+            )
 
         with open(staged_path, "rb") as f:
             content = f.read()
@@ -271,9 +354,31 @@ class IngestionService:
         if not data_import:
             raise HTTPException(status_code=404, detail="Import session not found")
 
-        staged_path = cls._get_staged_file_path(import_id)
+        staged_path = cls._get_staged_file_path(import_id, data_import.filename)
         if not staged_path or not staged_path.exists():
-            raise HTTPException(status_code=404, detail="Staged file expired or not found")
+            if data_import.status == "completed":
+                return {
+                    "import_id": str(data_import.id),
+                    "filename": data_import.filename,
+                    "validation": {
+                        "is_valid": True,
+                        "total_rows": data_import.rows_total or data_import.rows_processed or 0,
+                        "valid_rows": data_import.rows_processed or 0,
+                        "invalid_rows": 0,
+                        "duplicates_count": 0,
+                        "duplicates": 0,
+                        "summary": f"Import previously completed with {data_import.rows_processed or 0} valid rows.",
+                        "errors": [],
+                        "warnings": [],
+                    },
+                    "column_mapping": data_import.column_mapping or {},
+                    "preview_normalized": [],
+                    "already_completed": True
+                }
+            raise HTTPException(
+                status_code=404,
+                detail=f"Staged file not found for session {import_id}. The upload may have expired or been removed. Please re-upload your CSV file to continue."
+            )
 
         with open(staged_path, "rb") as f:
             content = f.read()
@@ -321,11 +426,47 @@ class IngestionService:
         ).first()
 
         if not data_import:
-            raise HTTPException(status_code=404, detail="Import session not found")
+            raise HTTPException(status_code=404, detail=f"Import session {import_id} not found.")
 
-        staged_path = cls._get_staged_file_path(import_id)
+        # IDEMPOTENCY / RETRY GUARD:
+        # If this import has already succeeded and was committed into PostgreSQL,
+        # return the saved result idempotently so transient network timeouts or
+        # duplicate button clicks do NOT throw 'Staged file not found' after successful unlinking.
+        if data_import.status == "completed":
+            logger.info(f"Import {import_id} was already completed successfully. Returning idempotent result.")
+            saved_result = data_import.result or {}
+            entities_created = saved_result.get("entities_created", {
+                "products": saved_result.get("created_products", 0),
+                "suppliers": saved_result.get("created_suppliers", 0),
+                "warehouses": saved_result.get("created_warehouses", 0),
+                "inventory": saved_result.get("created_inventory", 0),
+                "orders": saved_result.get("created_orders", 0),
+                "shipments": saved_result.get("created_shipments", 0),
+                "sales_transactions": saved_result.get("created_sales_transactions", 0),
+            })
+            return {
+                "success": True,
+                "import_id": str(data_import.id),
+                "filename": data_import.filename,
+                "file_type": data_import.file_type,
+                "source_type": data_import.source_type,
+                "status": "completed",
+                "rows_total": data_import.rows_total or 0,
+                "rows_processed": data_import.rows_processed or 0,
+                "rows_failed": data_import.rows_failed or 0,
+                "entities_created": entities_created,
+                "columns_detected": data_import.columns_detected or [],
+                "message": f"Successfully ingested {data_import.rows_processed or 0} rows from {data_import.filename} into SynChain database.",
+                "already_completed": True
+            }
+
+        staged_path = cls._get_staged_file_path(import_id, data_import.filename)
         if not staged_path or not staged_path.exists():
-            raise HTTPException(status_code=404, detail="Staged file not found")
+            logger.error(f"Staged file missing for active import session {import_id} ({data_import.filename})")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Staged file not found for session {import_id}. The upload may have expired or been removed. Please re-upload your CSV file to continue."
+            )
 
         with open(staged_path, "rb") as f:
             content = f.read()
@@ -353,12 +494,16 @@ class IngestionService:
                 except Exception as lock_err:
                     logger.debug(f"Advisory lock skipped: {lock_err}")
 
+                # Purge prior uncommitted/failed ImportedRecords for this import_id to ensure clean retry
+                db.query(ImportedRecord).filter(ImportedRecord.import_id == data_import.id).delete()
+
                 # Collect unique lookup identifiers across the valid rows
                 unique_skus = set()
                 unique_suppliers = set()
                 unique_warehouses = set()
                 unique_orders = set()
                 unique_receipts = set()
+                unique_shipments = set()
 
                 for idx, (raw_row, canon_row) in enumerate(zip(raw_rows, normalized_records), start=1):
                     if idx in invalid_row_indices:
@@ -387,6 +532,9 @@ class IngestionService:
                     rcpt_id = canon_row.get("receipt_id") or raw_row.get("receipt_id")
                     if rcpt_id:
                         unique_receipts.add(str(rcpt_id).strip())
+                    shp_id = canon_row.get("shipment_id") or raw_row.get("shipment_id") or raw_row.get("tracking_number") or raw_row.get("tracking_id")
+                    if shp_id:
+                        unique_shipments.add(str(shp_id).strip())
 
                 # Preload existing entities in bulk to eliminate N+1 SSL round trips
                 product_map: Dict[str, Product] = {}
@@ -434,6 +582,13 @@ class IngestionService:
                     ).all():
                         lead_time_map[lto.receipt_id] = lto
 
+                shipment_map: Dict[str, Shipment] = {}
+                if unique_shipments:
+                    for shp in db.query(Shipment).filter(Shipment.shipment_id.in_(list(unique_shipments))).all():
+                        shipment_map[shp.shipment_id] = shp
+
+                sales_tx_map: Dict[str, SalesTransaction] = {}
+
                 rows_processed = 0
                 rows_failed = 0
                 created_products = 0
@@ -443,6 +598,8 @@ class IngestionService:
                 created_orders = 0
                 created_demand_obs = 0
                 created_lead_time_obs = 0
+                created_shipments = 0
+                created_sales_transactions = 0
 
                 BATCH_SIZE = 50
 
@@ -480,9 +637,11 @@ class IngestionService:
                         sku_str = str(sku).strip()
                         if sku_str in product_map:
                             product_obj = product_map[sku_str]
-                            if name and not product_obj.name:
+                            if name:
                                 product_obj.name = str(name)
-                            if price > 0 and (not product_obj.price or product_obj.price == Decimal("0.0")):
+                            if category and category != "General":
+                                product_obj.category = str(category)
+                            if price > 0:
                                 product_obj.price = price
                         else:
                             product_obj = Product(
@@ -642,6 +801,14 @@ class IngestionService:
                             else:
                                 reorder_qty = max(200, int(qty * 0.60))
 
+                            daily_dem_val = canon_row.get("daily_demand") or raw_row.get("daily_demand") or raw_row.get("average_daily_demand")
+                            lead_time_val = canon_row.get("lead_time_days") or raw_row.get("lead_time_days") or raw_row.get("lead_time")
+                            if supplier_obj and lead_time_val is not None and not supplier_obj.lead_time_days:
+                                try:
+                                    supplier_obj.lead_time_days = int(float(lead_time_val))
+                                except Exception:
+                                    pass
+
                             route_key = (warehouse_obj.id, product_obj.id)
                             if route_key in inv_map:
                                 inv_obj = inv_map[route_key]
@@ -657,6 +824,16 @@ class IngestionService:
                                     inv_obj.service_level = service_level
                                 if supplier_id is not None:
                                     inv_obj.supplier_id = supplier_id
+                                if daily_dem_val is not None:
+                                    try:
+                                        inv_obj.average_daily_demand = Decimal(str(float(daily_dem_val)))
+                                    except Exception:
+                                        pass
+                                if lead_time_val is not None:
+                                    try:
+                                        inv_obj.lead_time_days = int(float(lead_time_val))
+                                    except Exception:
+                                        pass
                             else:
                                 inv_obj = Inventory(
                                     warehouse_id=warehouse_obj.id,
@@ -669,7 +846,9 @@ class IngestionService:
                                     incoming_quantity=incoming_qty,
                                     review_days=review_days,
                                     service_level=service_level,
-                                    supplier_id=supplier_id
+                                    supplier_id=supplier_id,
+                                    average_daily_demand=Decimal(str(float(daily_dem_val))) if daily_dem_val is not None else None,
+                                    lead_time_days=int(float(lead_time_val)) if lead_time_val is not None else None,
                                 )
                                 db.add(inv_obj)
                                 inv_map[route_key] = inv_obj
@@ -825,6 +1004,148 @@ class IngestionService:
                         except Exception as e:
                             logger.debug(f"Row {idx} lead time observation skipped: {e}")
 
+                    # 7b. Shipment creation / update (for Live Shipments module)
+                    shp_id = canon_row.get("shipment_id") or raw_row.get("shipment_id") or raw_row.get("tracking_number") or raw_row.get("tracking_id")
+                    has_route = bool(canon_row.get("source_location") or raw_row.get("source_location") or canon_row.get("destination") or raw_row.get("destination") or canon_row.get("transport_mode") or raw_row.get("transport_mode"))
+                    if shp_id or has_route:
+                        actual_shp_code = str(shp_id).strip() if shp_id else f"SHP-{data_import.id.hex[:6].upper()}-{idx:03d}"
+                        dest_val = canon_row.get("destination") or raw_row.get("destination") or (warehouse_obj.location if warehouse_obj else "Regional Distribution Hub")
+                        origin_val = (
+                            canon_row.get("source_location")
+                            or raw_row.get("source_location")
+                            or (supplier_obj.country if supplier_obj else None)
+                            or "Origin Hub"
+                        )
+                        carrier_val = canon_row.get("carrier") or raw_row.get("carrier") or raw_row.get("shipping_carrier") or "Global Freight"
+                        trans_mode_val = canon_row.get("transport_mode") or raw_row.get("transport_mode") or raw_row.get("shipping_mode") or "Ocean"
+                        
+                        dep_date_val = order_date if ('order_date' in locals() and order_date) else datetime.now(timezone.utc)
+                        exp_deliv_val = canon_row.get("expected_delivery") or raw_row.get("expected_delivery")
+                        actual_deliv_val = canon_row.get("actual_delivery") or raw_row.get("actual_delivery")
+
+                        exp_dt = None
+                        if exp_deliv_val:
+                            try:
+                                exp_dt = datetime.fromisoformat(str(exp_deliv_val)[:19].replace("Z", "+00:00"))
+                                if exp_dt.tzinfo is None:
+                                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                            except Exception:
+                                pass
+                        if not exp_dt:
+                            lead_days = 7
+                            if supplier_obj and supplier_obj.lead_time_days:
+                                lead_days = supplier_obj.lead_time_days
+                            exp_dt = dep_date_val + timedelta(days=lead_days)
+
+                        act_dt = None
+                        if actual_deliv_val:
+                            try:
+                                act_dt = datetime.fromisoformat(str(actual_deliv_val)[:19].replace("Z", "+00:00"))
+                                if act_dt.tzinfo is None:
+                                    act_dt = act_dt.replace(tzinfo=timezone.utc)
+                            except Exception:
+                                pass
+
+                        st_val = str(canon_row.get("status") or raw_row.get("status") or "in_transit").lower().replace(" ", "_")
+                        if st_val not in ("in_transit", "delivered", "delayed", "pending", "cancelled"):
+                            st_val = "in_transit"
+
+                        cargo_desc = f"{product_obj.name} ({qty} units)" if (product_obj and qty_val) else str(raw_row.get("cargo_description") or "Commercial Freight")
+                        shp_qty = int(float(qty_val)) if qty_val else 100
+
+                        try:
+                            if actual_shp_code in shipment_map:
+                                shp_obj = shipment_map[actual_shp_code]
+                            else:
+                                shp_obj = db.query(Shipment).filter(Shipment.shipment_id == actual_shp_code).first()
+
+                            if shp_obj:
+                                shp_obj.origin = str(origin_val)
+                                shp_obj.destination = str(dest_val)
+                                shp_obj.carrier_name = str(carrier_val)
+                                shp_obj.tracking_number = actual_shp_code
+                                shp_obj.transport_mode = str(trans_mode_val).capitalize()
+                                shp_obj.status = st_val
+                                if supplier_obj:
+                                    shp_obj.supplier_id = supplier_obj.id
+                                shp_obj.quantity = shp_qty
+                                if exp_dt:
+                                    shp_obj.expected_delivery_date = exp_dt
+                                if act_dt:
+                                    shp_obj.actual_delivery_date = act_dt
+                                shipment_map[actual_shp_code] = shp_obj
+                            else:
+                                shp_obj = Shipment(
+                                    shipment_id=actual_shp_code,
+                                    shipment_name=f"Shipment {actual_shp_code}",
+                                    tracking_number=actual_shp_code,
+                                    supplier_id=supplier_obj.id if supplier_obj else None,
+                                    origin=str(origin_val),
+                                    destination=str(dest_val),
+                                    cargo_description=cargo_desc,
+                                    quantity=shp_qty,
+                                    transport_mode=str(trans_mode_val).capitalize(),
+                                    departure_date=dep_date_val,
+                                    expected_delivery_date=exp_dt,
+                                    actual_delivery_date=act_dt,
+                                    carrier_name=str(carrier_val),
+                                    status=st_val,
+                                    risk_score=75 if st_val == "delayed" else (25 if st_val == "in_transit" else 10),
+                                    risk_level="HIGH" if st_val == "delayed" else ("MEDIUM" if st_val == "in_transit" else "LOW"),
+                                )
+                                db.add(shp_obj)
+                                shipment_map[actual_shp_code] = shp_obj
+                                created_shipments += 1
+                        except Exception as e:
+                            logger.debug(f"Row {idx} shipment skipped: {e}")
+
+                    # 7c. SalesTransaction creation / update (for Sales Forecasting module)
+                    if product_obj and qty_stock_val is not None:
+                        try:
+                            tx_code = f"TX-{order_id_str if order_id else data_import.id.hex[:6].upper()}-{idx:03d}"
+                            if tx_code in sales_tx_map:
+                                sales_tx = sales_tx_map[tx_code]
+                            else:
+                                sales_tx = db.query(SalesTransaction).filter(SalesTransaction.transaction_id == tx_code).first()
+
+                            s_qty = int(float(qty_stock_val)) if qty_stock_val is not None else 1
+                            s_price = price if price > 0 else Decimal("45.0")
+                            s_gross = Decimal(str(float(s_price) * s_qty))
+                            tx_date = order_date if ('order_date' in locals() and order_date) else datetime.now(timezone.utc)
+                            tx_region = canon_row.get("source_location") or raw_row.get("region") or (warehouse_obj.location if warehouse_obj else "North America")
+
+                            if sales_tx:
+                                sales_tx.transaction_date = tx_date
+                                sales_tx.product_id = product_obj.sku
+                                sales_tx.product_name = product_obj.name
+                                sales_tx.product_category = product_obj.category
+                                sales_tx.quantity_sold = s_qty
+                                sales_tx.unit_selling_price = s_price
+                                sales_tx.gross_revenue = s_gross
+                                sales_tx.net_revenue = s_gross
+                                sales_tx.region = str(tx_region)
+                                sales_tx.import_id = data_import.id
+                                sales_tx_map[tx_code] = sales_tx
+                            else:
+                                sales_tx = SalesTransaction(
+                                    transaction_id=tx_code,
+                                    transaction_date=tx_date,
+                                    product_id=product_obj.sku,
+                                    product_name=product_obj.name,
+                                    product_category=product_obj.category,
+                                    quantity_sold=s_qty,
+                                    unit_selling_price=s_price,
+                                    gross_revenue=s_gross,
+                                    net_revenue=s_gross,
+                                    region=str(tx_region),
+                                    import_id=data_import.id,
+                                )
+                                db.add(sales_tx)
+                                sales_tx_map[tx_code] = sales_tx
+                                created_sales_transactions += 1
+                        except Exception as e:
+                            logger.debug(f"Row {idx} sales transaction skipped: {e}")
+
                     # 8. Record ImportedRecord row for traceability
                     imp_rec = ImportedRecord(
                         import_id=data_import.id,
@@ -876,6 +1197,8 @@ class IngestionService:
                     "created_orders": created_orders,
                     "created_demand_observations": created_demand_obs,
                     "created_lead_time_observations": created_lead_time_obs,
+                    "created_shipments": created_shipments,
+                    "created_sales_transactions": created_sales_transactions,
                     "verified": True
                 }
                 data_import.error_summary = {
@@ -941,7 +1264,9 @@ class IngestionService:
                 "suppliers": created_suppliers,
                 "warehouses": created_warehouses,
                 "inventory": created_inventory,
-                "orders": created_orders
+                "orders": created_orders,
+                "shipments": created_shipments,
+                "sales_transactions": created_sales_transactions,
             },
             "columns_detected": headers,
             "message": f"Successfully ingested {rows_processed} rows from {data_import.filename} into SynChain database."
@@ -977,3 +1302,41 @@ class IngestionService:
                 "completed_at": rec.completed_at.isoformat() if rec.completed_at else None,
             })
         return history_list
+
+    @classmethod
+    def cancel_import(
+        cls,
+        db: Session,
+        import_id: str,
+        user_id: uuid.UUID
+    ) -> Dict[str, Any]:
+        """
+        Cancels an uncommitted import session and removes any staged file safely.
+        """
+        data_import = db.query(DataImport).filter(
+            DataImport.id == import_id,
+            DataImport.user_id == user_id
+        ).first()
+
+        if not data_import:
+            raise HTTPException(status_code=404, detail=f"Import session {import_id} not found.")
+
+        staged_path = cls._get_staged_file_path(import_id, data_import.filename)
+        if staged_path and staged_path.exists():
+            try:
+                staged_path.unlink()
+                logger.info(f"Unlinked staged file for cancelled import session {import_id}")
+            except Exception as e:
+                logger.warning(f"Could not remove staged file on cancel: {e}")
+
+        if data_import.status != "completed":
+            data_import.status = "cancelled"
+            data_import.completed_at = datetime.now(timezone.utc)
+            db.commit()
+
+        return {
+            "success": True,
+            "import_id": str(data_import.id),
+            "status": data_import.status,
+            "message": "Import session cancelled and staged file cleaned up."
+        }
